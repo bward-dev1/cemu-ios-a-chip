@@ -560,6 +560,12 @@ struct GameCardOptimized: View {
                                 .background(Color(red: 0.3, green: 0.6, blue: 1.0))
                                 .cornerRadius(6)
                                 .padding(8)
+                                // Without this, VoiceOver reads the icon and
+                                // text as two fragmented elements ("clock
+                                // arrow circlepath", then "RESUME") instead
+                                // of one coherent phrase.
+                                .accessibilityElement(children: .ignore)
+                                .accessibilityLabel("Resume available")
                             } else if isNewAndUnplayed {
                                 Text("NEW")
                                     .font(.system(size: 9, weight: .heavy))
@@ -943,6 +949,8 @@ struct EmulatorViewOptimized: View {
                     .background(Color.black.opacity(0.75))
                     .cornerRadius(20)
                     .padding(.top, 70)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Resumed from auto-save")
 
                     Spacer()
                 }
