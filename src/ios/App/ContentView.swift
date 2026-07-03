@@ -1,12 +1,20 @@
 import SwiftUI
 import MetalKit
 
+private let lastControllerSkinDefaultsKey = "lastControllerSkinName"
+
 struct ContentView: View {
     @StateObject var gameManager = GameManager()
     @State private var selectedGame: GameMetadata?
     @State private var showingGameBrowser = true
     @State private var showingFavorites = false
-    @State private var selectedSkin: WiiUControllerSkin = WiiUControllerSkin.standard
+    @State private var selectedSkin: WiiUControllerSkin
+
+    init() {
+        let savedName = UserDefaults.standard.string(forKey: lastControllerSkinDefaultsKey)
+        let restoredSkin = savedName.flatMap { ControllerSkinLibrary.getSkin(by: $0) } ?? WiiUControllerSkin.standard
+        _selectedSkin = State(initialValue: restoredSkin)
+    }
 
     var body: some View {
         ZStack {
@@ -35,6 +43,9 @@ struct ContentView: View {
             }
         }
         .ignoresSafeArea()
+        .onChange(of: selectedSkin.name) { newName in
+            UserDefaults.standard.set(newName, forKey: lastControllerSkinDefaultsKey)
+        }
     }
 }
 
@@ -262,6 +273,9 @@ struct GameBrowserView: View {
                                 }
                             }
                             .padding(16)
+                        }
+                        .refreshable {
+                            await gameManager.loadGames()
                         }
                     }
                 }
