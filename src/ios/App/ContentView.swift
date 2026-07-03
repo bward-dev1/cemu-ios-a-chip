@@ -91,12 +91,14 @@ struct LaunchErrorView: View {
 enum GameSortOption: String, CaseIterable {
     case name = "Name"
     case recentlyAdded = "Recently Added"
+    case recentlyPlayed = "Recently Played"
     case favoritesFirst = "Favorites First"
 
     var systemImage: String {
         switch self {
         case .name: return "textformat"
         case .recentlyAdded: return "clock"
+        case .recentlyPlayed: return "play.circle"
         case .favoritesFirst: return "heart"
         }
     }
@@ -129,6 +131,15 @@ struct GameBrowserView: View {
             return searched.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
         case .recentlyAdded:
             return searched.sorted { $0.dateAdded > $1.dateAdded }
+        case .recentlyPlayed:
+            return searched.sorted { lhs, rhs in
+                switch (lhs.lastPlayedDate, rhs.lastPlayedDate) {
+                case let (l?, r?): return l > r
+                case (.some, nil): return true
+                case (nil, .some): return false
+                case (nil, nil): return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+                }
+            }
         case .favoritesFirst:
             return searched.sorted { lhs, rhs in
                 if lhs.isFavorite != rhs.isFavorite {

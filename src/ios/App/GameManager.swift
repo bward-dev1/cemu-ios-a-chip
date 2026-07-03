@@ -12,9 +12,10 @@ struct GameMetadata: Codable, Identifiable {
     let genre: String
     var isFavorite: Bool = false
     var dateAdded: Date = Date()
+    var lastPlayedDate: Date?
 
     enum CodingKeys: String, CodingKey {
-        case id, title, romPath, coverPath, region, releaseDate, genre, dateAdded
+        case id, title, romPath, coverPath, region, releaseDate, genre, dateAdded, lastPlayedDate
     }
 }
 
@@ -53,6 +54,7 @@ class GameManager: ObservableObject {
 
     private let romsDirectory = "Roms"
     private let gameListFile = "games.json"
+    private let lastPlayedFile = "lastPlayed.json"
     private var emulationEngine: OptimizedEmulationEngine?
     private var frameRateCancellable: AnyCancellable?
 
@@ -95,6 +97,7 @@ class GameManager: ObservableObject {
             )
 
             let favoriteIDs = loadFavoriteIDs(documentsPath: documentsPath)
+            let lastPlayedDates = loadLastPlayedDates(documentsPath: documentsPath)
             var discoveredGames: [GameMetadata] = []
 
             for item in contents {
@@ -113,7 +116,8 @@ class GameManager: ObservableObject {
                     releaseDate: "Unknown",
                     genre: "Game",
                     isFavorite: favoriteIDs.contains(gameID),
-                    dateAdded: addedDate
+                    dateAdded: addedDate,
+                    lastPlayedDate: lastPlayedDates[gameID]
                 )
 
                 discoveredGames.append(gameMetadata)
@@ -211,6 +215,19 @@ class GameManager: ObservableObject {
         games.removeAll { $0.id == game.id }
         favorites.removeAll { $0.id == game.id }
         saveFavoriteIDs()
+        removeLastPlayed(game.id)
+    }
+
+    private func removeLastPlayed(_ gameID: String) {
+        guard let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            return
+        }
+
+        var dates = loadLastPlayedDates(documentsPath: documentsPath)
+        guard dates.removeValue(forKey: gameID) != nil else { return }
+
+        guard let data = try? JSONEncoder().encode(dates) else { return }
+        try? data.write(to: lastPlayedFileURL(documentsPath: documentsPath), options: .atomic)
     }
 
     private func favoritesFileURL(documentsPath: URL) -> URL {
@@ -236,6 +253,37 @@ class GameManager: ObservableObject {
         try? data.write(to: favoritesFileURL(documentsPath: documentsPath), options: .atomic)
     }
 
+    private func lastPlayedFileURL(documentsPath: URL) -> URL {
+        documentsPath.appendingPathComponent(lastPlayedFile)
+    }
+
+    private func loadLastPlayedDates(documentsPath: URL) -> [String: Date] {
+        let url = lastPlayedFileURL(documentsPath: documentsPath)
+        guard let data = try? Data(contentsOf: url),
+              let dates = try? JSONDecoder().decode([String: Date].self, from: data) else {
+            return [:]
+        }
+        return dates
+    }
+
+    /// Records `game` as just-played and persists it immediately so a force
+    /// quit mid-session doesn't lose the timestamp.
+    private func recordLastPlayed(_ game: GameMetadata) {
+        guard let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            return
+        }
+
+        var dates = loadLastPlayedDates(documentsPath: documentsPath)
+        dates[game.id] = Date()
+
+        if let index = games.firstIndex(where: { $0.id == game.id }) {
+            games[index].lastPlayedDate = dates[game.id]
+        }
+
+        guard let data = try? JSONEncoder().encode(dates) else { return }
+        try? data.write(to: lastPlayedFileURL(documentsPath: documentsPath), options: .atomic)
+    }
+
     func launchGame(_ game: GameMetadata) {
         currentGame = game
         emulationState = .loading
@@ -255,6 +303,7 @@ class GameManager: ObservableObject {
 
         engine.startEmulation()
         emulationState = .running
+        recordLastPlayed(game)
     }
 
     func stopEmulation() {

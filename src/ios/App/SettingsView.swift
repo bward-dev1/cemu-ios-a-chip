@@ -4,6 +4,12 @@ struct SettingsView: View {
     @ObservedObject var gameManager: GameManager
     @Environment(\.dismiss) private var dismiss
 
+    private var appVersionString: String {
+        let shortVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+        return "\(shortVersion) (\(build))"
+    }
+
     var body: some View {
         NavigationStack {
             ZStack {
@@ -40,7 +46,7 @@ struct SettingsView: View {
                     }
 
                     Section("About") {
-                        LabeledContent("Version", value: "1.0")
+                        LabeledContent("Version", value: appVersionString)
                         Link(destination: URL(string: "https://github.com/bward-dev1/cemu-ios-a-chip")!) {
                             Label("View on GitHub", systemImage: "arrow.up.right.square")
                         }
