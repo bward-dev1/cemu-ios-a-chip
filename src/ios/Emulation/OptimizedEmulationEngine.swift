@@ -207,7 +207,9 @@ class OptimizedGPUContext {
             return nil
         }
 
-        renderEncoder.setRenderPipelineState(renderPipelineState ?? MTLRenderPipelineState())
+        if let pipelineState = renderPipelineState {
+            renderEncoder.setRenderPipelineState(pipelineState)
+        }
         renderEncoder.setFrontFacing(.counterClockwise)
         renderEncoder.setCullMode(.back)
 
@@ -228,7 +230,6 @@ class OptimizedGPUContext {
         renderEncoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
         renderEncoder.endEncoding()
 
-        commandBuffer.present(texture)
         commandBuffer.commit()
 
         return texture

@@ -151,7 +151,6 @@ class GPUContext {
         renderEncoder.setCullMode(.back)
         renderEncoder.endEncoding()
 
-        commandBuffer.present(texture)
         commandBuffer.commit()
 
         return texture

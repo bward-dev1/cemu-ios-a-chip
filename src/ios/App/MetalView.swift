@@ -20,6 +20,8 @@ struct MetalViewIOS: UIViewRepresentable {
     }
 
     func makeCoordinator() -> MetalRenderer {
-        return MetalRenderer(gameManager: gameManager)
+        let renderer = MetalRenderer()
+        renderer.gameManager = gameManager
+        return renderer
     }
 }
