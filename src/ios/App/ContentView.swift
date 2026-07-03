@@ -1,3 +1,4 @@
+import PhotosUI
 import SwiftUI
 import MetalKit
 
@@ -114,6 +115,8 @@ struct GameBrowserView: View {
     @State private var isImporting = false
     @State private var showingSettings = false
     @State private var pendingDelete: GameMetadata?
+    @State private var coverPickerTarget: GameMetadata?
+    @State private var coverPickerItem: PhotosPickerItem?
     @AppStorage("gameSortOption") private var sortOptionRaw: String = GameSortOption.name.rawValue
 
     private var sortOption: GameSortOption {
@@ -279,6 +282,9 @@ struct GameBrowserView: View {
                                         },
                                         onDeleteTap: {
                                             pendingDelete = game
+                                        },
+                                        onSetCoverTap: {
+                                            coverPickerTarget = game
                                         }
                                     )
                                 }
@@ -337,6 +343,24 @@ struct GameBrowserView: View {
         } message: {
             Text("This removes the ROM file from your device. This can't be undone.")
         }
+        .photosPicker(
+            isPresented: Binding(
+                get: { coverPickerTarget != nil },
+                set: { if !$0 { coverPickerTarget = nil } }
+            ),
+            selection: $coverPickerItem,
+            matching: .images
+        )
+        .onChange(of: coverPickerItem) { newItem in
+            guard let newItem, let target = coverPickerTarget else { return }
+            Task {
+                if let data = try? await newItem.loadTransferable(type: Data.self) {
+                    await gameManager.setCover(for: target, imageData: data)
+                }
+                coverPickerItem = nil
+                coverPickerTarget = nil
+            }
+        }
     }
 }
 
@@ -345,6 +369,7 @@ struct GameCardOptimized: View {
     let onTap: () -> Void
     let onFavoriteTap: () -> Void
     let onDeleteTap: () -> Void
+    let onSetCoverTap: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -439,6 +464,9 @@ struct GameCardOptimized: View {
         .contextMenu {
             Button(action: onFavoriteTap) {
                 Label(game.isFavorite ? "Remove from Favorites" : "Add to Favorites", systemImage: game.isFavorite ? "heart.slash" : "heart")
+            }
+            Button(action: onSetCoverTap) {
+                Label("Set Cover Image", systemImage: "photo")
             }
             Button(role: .destructive, action: onDeleteTap) {
                 Label("Delete ROM", systemImage: "trash")

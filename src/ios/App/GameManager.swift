@@ -183,6 +183,34 @@ class GameManager: ObservableObject {
         return nil
     }
 
+    /// Saves `imageData` as `{game.id}_cover.jpg` in Documents/Roms/, matching
+    /// the naming convention findCover() already looks for, then rescans so
+    /// the new cover shows up immediately. Removes any other-extension cover
+    /// for the same game first so a re-pick doesn't leave an orphaned old one.
+    func setCover(for game: GameMetadata, imageData: Data) async {
+        let fileManager = FileManager.default
+        guard let documentsPath = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            return
+        }
+
+        let romsPath = documentsPath.appendingPathComponent(romsDirectory)
+
+        for ext in ["jpg", "jpeg", "png"] {
+            let existing = romsPath.appendingPathComponent("\(game.id)_cover.\(ext)")
+            try? fileManager.removeItem(at: existing)
+        }
+
+        let destination = romsPath.appendingPathComponent("\(game.id)_cover.jpg")
+        do {
+            try imageData.write(to: destination, options: .atomic)
+        } catch {
+            lastImportError = "Couldn't save cover for \"\(game.title)\": \(error.localizedDescription)"
+            return
+        }
+
+        await loadGames()
+    }
+
     func toggleFavorite(_ game: GameMetadata) {
         if let index = games.firstIndex(where: { $0.id == game.id }) {
             games[index].isFavorite.toggle()
