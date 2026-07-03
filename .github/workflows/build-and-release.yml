@@ -70,9 +70,12 @@ jobs:
       id: release_notes
       run: |
         VERSION="${{ github.ref_name }}"
-        COMMIT_MSG=$(git log -1 --pretty=%B)
         echo "version=$VERSION" >> $GITHUB_OUTPUT
-        echo "message=$COMMIT_MSG" >> $GITHUB_OUTPUT
+        {
+          echo "message<<COMMITMSG_EOF"
+          git log -1 --pretty=%B
+          echo "COMMITMSG_EOF"
+        } >> $GITHUB_OUTPUT
 
     - name: Create Release
       uses: softprops/action-gh-release@v1
