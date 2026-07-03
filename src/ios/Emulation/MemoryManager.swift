@@ -78,7 +78,11 @@ class MemoryManager {
     }
 
     func readBuffer(_ address: UInt32, length: Int) -> [UInt8] {
-        guard let addr = localOffset(address), addr + length <= memorySize else { return [] }
+        // length >= 0 isn't just belt-and-suspenders: a negative length would
+        // pass the upper-bound check below (a smaller sum) and then crash
+        // forming memory[addr..<(addr+length)], an invalid Range with
+        // upperBound < lowerBound.
+        guard length >= 0, let addr = localOffset(address), addr + length <= memorySize else { return [] }
         return Array(memory[addr..<(addr + length)])
     }
 

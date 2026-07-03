@@ -84,4 +84,88 @@ final class CPUCoreTests: XCTestCase {
         XCTAssertEqual(cpu.getState().registers[1], 0x8000_1000)
         XCTAssertEqual(cpu.getState().registers[3], 42, "a value stored via STW must be readable back via LWZ at the same address")
     }
+
+    /// evaluateBranchCondition() treats BO bit 0x10 as "branch always" (a
+    /// simplification of the real PowerPC BO decode table, consistent with
+    /// this being a stub interpreter). BCx's bo/bi/bd fields share the exact
+    /// same bit positions as ADDI's rt/ra/simm, so the existing encode()
+    /// helper works unchanged - only the opcode and the taken/not-taken bit
+    /// pattern differ.
+    ///
+    /// Unlike B (executeB), which sets pc to an *absolute* address, BC
+    /// (executeBCx) adds its displacement to the *current* pc - PC-relative,
+    /// matching real PowerPC BC semantics. Verified by reading executeBCx's
+    /// source directly rather than assumed from the B test's shape.
+    func testConditionalBranchTakenAdvancesToTarget() {
+        let memory = MemoryManager(size: 0x1000_0000, baseAddress: 0x8000_0000)
+        let startPC: UInt32 = 0x8000_4000
+        let offset: UInt32 = 0x2000
+        let bd = (offset >> 2) & 0xFFFF
+        memory.write32(startPC, encode(primary: 0x10, rt: 0x14, ra: 0, simm: bd)) // BC, bo=0x14 (taken)
+
+        let cpu = WiiUCPU(memory: memory, jitEnabled: false)
+        _ = cpu.executeInstruction()
+
+        XCTAssertEqual(cpu.getState().pc, startPC &+ offset, "a taken BC branch adds its offset to the current pc")
+    }
+
+    func testConditionalBranchNotTakenFallsThrough() {
+        let memory = MemoryManager(size: 0x1000_0000, baseAddress: 0x8000_0000)
+        let bd: UInt32 = (0x2000 >> 2) & 0xFFFF
+        memory.write32(0x8000_4000, encode(primary: 0x10, rt: 0x04, ra: 0, simm: bd)) // BC, bo=0x04 (not taken)
+
+        let cpu = WiiUCPU(memory: memory, jitEnabled: false)
+        _ = cpu.executeInstruction()
+
+        XCTAssertEqual(cpu.getState().pc, 0x8000_4004, "an untaken conditional branch must just fall through to pc+4")
+    }
+
+    func testGetStateThenRestoreStateRoundTrips() {
+        let memory = MemoryManager(size: 0x1000_0000, baseAddress: 0x8000_0000)
+        memory.write32(0x8000_4000, encode(primary: 0x0E, rt: 5, ra: 0, simm: 99)) // r5 = 99
+
+        let cpu = WiiUCPU(memory: memory, jitEnabled: false)
+        _ = cpu.executeInstruction()
+        let snapshot = cpu.getState()
+
+        // Mutate further so restoring is actually observable.
+        memory.write32(0x8000_4004, encode(primary: 0x0E, rt: 5, ra: 0, simm: 1))
+        _ = cpu.executeInstruction()
+        XCTAssertEqual(cpu.getState().registers[5], 1)
+
+        XCTAssertTrue(cpu.restoreState(snapshot))
+        XCTAssertEqual(cpu.getState().registers[5], 99)
+        XCTAssertEqual(cpu.getState().pc, snapshot.pc)
+    }
+
+    /// Regression test for a real crash risk: restoreState() used to assign
+    /// state.registers/state.fpRegisters straight into the CPU with no
+    /// length check. A save state is arbitrary data loaded from disk (a
+    /// partial write, disk corruption, a hand-edited or future-format file)
+    /// - every execute...() handler indexes registers[Int(rt)] with rt up to
+    /// 31 straight from the decoded instruction, so accepting a short array
+    /// here would turn a bad save file into an array-index-out-of-bounds
+    /// crash the next time any instruction touched a high-numbered register.
+    func testRestoreStateRejectsMalformedRegisterCount() {
+        let memory = MemoryManager(size: 0x1000_0000, baseAddress: 0x8000_0000)
+        memory.write32(0x8000_4000, encode(primary: 0x0E, rt: 5, ra: 0, simm: 99)) // r5 = 99
+
+        let cpu = WiiUCPU(memory: memory, jitEnabled: false)
+        _ = cpu.executeInstruction()
+
+        let malformed = CPUState(
+            pc: 0x8000_4000,
+            lr: 0,
+            ctr: 0,
+            cr: 0,
+            registers: Array(repeating: 0, count: 10), // too short - should be 32
+            fpRegisters: Array(repeating: 0.0, count: 32),
+            cycleCount: 0,
+            instructionCount: 0
+        )
+
+        XCTAssertFalse(cpu.restoreState(malformed))
+        XCTAssertEqual(cpu.getState().registers[5], 99, "a rejected restore must leave the CPU's existing state untouched")
+        XCTAssertEqual(cpu.getState().registers.count, 32, "the register array itself must never shrink below 32")
+    }
 }

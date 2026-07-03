@@ -37,28 +37,47 @@ final class OptimizedEmulationEngine: NSObject, ObservableObject {
     /// itself, serviced at the top of its next loop iteration, so it can
     /// never race an in-flight instruction's register/memory mutations.
     /// Fails immediately (nil, nil) if nothing is running.
+    ///
+    /// If a previous capture is still queued (not yet serviced) when a new
+    /// one comes in, the previous one's completion is fired with failure
+    /// first rather than being silently replaced - pendingCaptureCompletion
+    /// is a single slot, not a queue, so overwriting it without resolving
+    /// the old closure would leak whatever continuation/callback was
+    /// waiting on it forever (a permanently "saving..." UI with no way to
+    /// know it will never finish).
     func captureState(completion: @escaping (CPUState?, Data?) -> Void) {
         guard isRunning else {
             DispatchQueue.main.async { completion(nil, nil) }
             return
         }
         stateRequestLock.lock()
+        let displaced = pendingCaptureCompletion
         pendingCaptureCompletion = completion
         stateRequestLock.unlock()
+
+        if let displaced {
+            DispatchQueue.main.async { displaced(nil, nil) }
+        }
     }
 
-    /// Restores a previously captured save state. Same thread-safety
-    /// approach as `captureState`. `completion` reports false if `memoryData`
-    /// doesn't match this engine's memory size (e.g. a save state from a
-    /// differently-configured build) or if nothing is running to restore into.
+    /// Restores a previously captured save state. Same thread-safety and
+    /// same never-silently-drop approach as `captureState`. `completion`
+    /// reports false if `memoryData`/`cpuState` don't validate against this
+    /// engine (wrong memory size, malformed register arrays) or if nothing
+    /// is running to restore into.
     func restoreState(cpuState: CPUState, memoryData: Data, completion: @escaping (Bool) -> Void) {
         guard isRunning else {
             DispatchQueue.main.async { completion(false) }
             return
         }
         stateRequestLock.lock()
+        let displaced = pendingRestore
         pendingRestore = (cpuState, memoryData, completion)
         stateRequestLock.unlock()
+
+        if let displaced {
+            DispatchQueue.main.async { displaced.completion(false) }
+        }
     }
 
     private func servicePendingStateRequests() {
@@ -77,10 +96,31 @@ final class OptimizedEmulationEngine: NSObject, ObservableObject {
 
         if let restore {
             let memoryRestored = memory?.restoreRawBytes(restore.memoryData) ?? false
-            if memoryRestored {
-                cpu?.restoreState(restore.cpuState)
-            }
-            DispatchQueue.main.async { restore.completion(memoryRestored) }
+            let cpuRestored = memoryRestored && (cpu?.restoreState(restore.cpuState) ?? false)
+            DispatchQueue.main.async { restore.completion(cpuRestored) }
+        }
+    }
+
+    /// Fails (rather than silently drops) any capture/restore request still
+    /// queued when emulation stops. Without this, a request queued right as
+    /// stopEmulation() runs could sit in pendingCaptureCompletion/
+    /// pendingRestore forever: the loop's `while !shouldStop && isRunning`
+    /// check can flip false and exit before servicePendingStateRequests()
+    /// ever runs again for that request, so its completion - and whatever
+    /// continuation or UI state is waiting on it - would simply never fire.
+    private func failPendingStateRequests() {
+        stateRequestLock.lock()
+        let captureCompletion = pendingCaptureCompletion
+        let restore = pendingRestore
+        pendingCaptureCompletion = nil
+        pendingRestore = nil
+        stateRequestLock.unlock()
+
+        if let captureCompletion {
+            DispatchQueue.main.async { captureCompletion(nil, nil) }
+        }
+        if let restore {
+            DispatchQueue.main.async { restore.completion(false) }
         }
     }
 
@@ -143,6 +183,7 @@ final class OptimizedEmulationEngine: NSObject, ObservableObject {
         isRunning = false
         emulationThread?.cancel()
         instructionCache.removeAll(keepingCapacity: true)
+        failPendingStateRequests()
     }
 
     private func optimizedEmulationLoop() {
@@ -274,10 +315,16 @@ class OptimizedGPUContext {
     /// issuing the draw - the clear pass alone produces a well-defined black
     /// frame, which is what this stub is actually capable of rendering today.
     func renderOptimizedFrame(memory: MemoryManager) -> MTLTexture? {
-        guard let commandBuffer = commandQueue?.makeCommandBuffer() else { return nil }
+        // framePool is populated by conditionally appending each successfully
+        // allocated texture in setupFramePool() - under memory pressure,
+        // device.makeTexture() can return nil, leaving framePool.count short
+        // of framePoolSize. Indexing modulo the *target* size instead of the
+        // *actual* count would be an out-of-bounds crash the next time a
+        // frame renders; cycle through whatever textures actually exist.
+        guard !framePool.isEmpty, let commandBuffer = commandQueue?.makeCommandBuffer() else { return nil }
 
-        let texture = framePool[currentFrameIndex]
-        currentFrameIndex = (currentFrameIndex + 1) % framePoolSize
+        let texture = framePool[currentFrameIndex % framePool.count]
+        currentFrameIndex = (currentFrameIndex + 1) % framePool.count
 
         let renderPassDescriptor = MTLRenderPassDescriptor()
         renderPassDescriptor.colorAttachments[0].texture = texture

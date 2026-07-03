@@ -902,6 +902,7 @@ struct SaveStatesSheet: View {
                             slot: slot,
                             metadata: existingStates[slot],
                             isBusy: busySlot == slot,
+                            isDisabled: busySlot != nil && busySlot != slot,
                             onSave: { requestSave(slot: slot) },
                             onLoad: { load(slot: slot) },
                             onDelete: { gameManager.deleteSaveState(gameID: game.id, slot: slot) }
@@ -982,6 +983,13 @@ struct SaveStateRow: View {
     let slot: Int
     let metadata: SaveStateMetadata?
     let isBusy: Bool
+    /// True when a *different* slot is mid-save/load. Disables this row's
+    /// actions so the user can't fire a second overlapping save-state
+    /// request while one is already in flight - captureState/restoreState
+    /// only track one pending request at a time, so starting a second
+    /// before the first completes would silently strand it (see
+    /// OptimizedEmulationEngine's displaced-request handling).
+    let isDisabled: Bool
     let onSave: () -> Void
     let onLoad: () -> Void
     let onDelete: () -> Void
@@ -1019,7 +1027,7 @@ struct SaveStateRow: View {
                         .background(Color.white.opacity(0.1))
                         .cornerRadius(8)
                 }
-                .disabled(metadata == nil)
+                .disabled(metadata == nil || isDisabled)
 
                 Button(action: onSave) {
                     Text("Save")
@@ -1030,11 +1038,13 @@ struct SaveStateRow: View {
                         .background(Color(red: 0.3, green: 0.6, blue: 1.0))
                         .cornerRadius(8)
                 }
+                .disabled(isDisabled)
+                .opacity(isDisabled ? 0.4 : 1.0)
             }
         }
         .padding(.vertical, 4)
         .swipeActions(edge: .trailing) {
-            if metadata != nil {
+            if metadata != nil && !isDisabled {
                 Button(role: .destructive, action: onDelete) {
                     Label("Delete", systemImage: "trash")
                 }

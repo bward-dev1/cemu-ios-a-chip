@@ -148,7 +148,10 @@ class WiiUCPU {
         let bd = instr.bd
         let taken = evaluateBranchCondition(bo, bi)
         if taken {
-            pc = pc &+ (Int32(bitPattern: bd << 2) >= 0 ? UInt32(bitPattern: Int32(bitPattern: bd) << 2) : UInt32(bitPattern: Int32(bitPattern: bd) << 2))
+            // Both arms of what used to be a ternary here computed the exact
+            // same expression - not a functional bug, just dead weight that
+            // implied a distinction that didn't exist.
+            pc = pc &+ UInt32(bitPattern: Int32(bitPattern: bd) << 2)
             branched = true
         }
         return 1
@@ -244,14 +247,27 @@ class WiiUCPU {
         )
     }
 
-    /// Restores a previously captured CPUState (save state load). Resets the
-    /// JIT's compiled-loop cache: those loops are keyed by PC and decoded
-    /// against whatever memory bytes were live when compiled, and a restore
-    /// is exactly the kind of "memory contents changed out from under a
-    /// cached address" event the cache has no way to detect on its own.
-    /// Re-warming is cheap; a stale cached loop silently executing the wrong
-    /// decoded instructions is not.
-    func restoreState(_ state: CPUState) {
+    /// Restores a previously captured CPUState (save state load). Returns
+    /// false (leaving the CPU untouched) if the register arrays aren't
+    /// exactly 32 elements - a save state is arbitrary data loaded from disk
+    /// (a partial write, disk corruption, a hand-edited or future-format
+    /// file), and every `execute...` handler indexes `registers[Int(rt)]`
+    /// with rt up to 31 straight from the decoded instruction with no bounds
+    /// check of its own. Blindly accepting a short array here would turn a
+    /// bad save file into an array-index-out-of-bounds crash the next time
+    /// any instruction touched a high-numbered register.
+    ///
+    /// On success, resets the JIT's compiled-loop cache: those loops are
+    /// keyed by PC and decoded against whatever memory bytes were live when
+    /// compiled, and a restore is exactly the kind of "memory contents
+    /// changed out from under a cached address" event the cache has no way
+    /// to detect on its own. Re-warming is cheap; a stale cached loop
+    /// silently executing the wrong decoded instructions is not.
+    @discardableResult
+    func restoreState(_ state: CPUState) -> Bool {
+        guard state.registers.count == 32, state.fpRegisters.count == 32 else {
+            return false
+        }
         pc = state.pc
         lr = state.lr
         ctr = state.ctr
@@ -262,6 +278,7 @@ class WiiUCPU {
         instructionCount = state.instructionCount
         branched = false
         jit.reset()
+        return true
     }
 }
 
