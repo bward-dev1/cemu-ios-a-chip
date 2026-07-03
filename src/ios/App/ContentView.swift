@@ -4,6 +4,21 @@ import MetalKit
 
 private let lastControllerSkinDefaultsKey = "lastControllerSkinName"
 
+extension Bundle {
+    /// "2.4.1 (5)" style version string. Shown both in Settings and as a
+    /// small caption on the main library screen - a recurring source of
+    /// confusion this session was a bug report turning out to be a stale
+    /// build still installed on a test device, not a live regression.
+    /// Surfacing the version somewhere that ends up in every screen
+    /// recording (not just buried in Settings) makes that instantly
+    /// verifiable from the recording itself next time.
+    var appVersionString: String {
+        let shortVersion = infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = infoDictionary?["CFBundleVersion"] as? String ?? "?"
+        return "\(shortVersion) (\(build))"
+    }
+}
+
 struct ContentView: View {
     @StateObject var gameManager = GameManager()
     @State private var selectedGame: GameMetadata?
@@ -186,6 +201,10 @@ struct GameBrowserView: View {
                         Text("Emulator")
                             .font(.system(size: 18, weight: .semibold, design: .default))
                             .foregroundColor(Color(red: 0.4, green: 0.6, blue: 1.0))
+
+                        Text("v\(Bundle.main.appVersionString)")
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundColor(Color(red: 0.4, green: 0.4, blue: 0.5))
                     }
 
                     Spacer()
