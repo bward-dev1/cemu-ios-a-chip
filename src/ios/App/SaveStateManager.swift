@@ -75,15 +75,14 @@ final class SaveStateManager {
         engine: OptimizedEmulationEngine,
         completion: @escaping (Result<Void, SaveStateError>) -> Void
     ) {
-        engine.captureState { [weak self] cpuState, memoryData in
+        let handleCapture: (CPUState?, Data?) -> Void = { [weak self] cpuState, memoryData in
             guard let self else { return }
             guard let cpuState, let memoryData else {
                 completion(.failure(.notRunning))
                 return
             }
 
-            let compressedResult: Data? = try? (memoryData as NSData).compressed(using: .lzfse)
-            guard let compressed = compressedResult else {
+            guard let compressed = self.compress(memoryData) else {
                 completion(.failure(.compressionFailed))
                 return
             }
@@ -118,6 +117,20 @@ final class SaveStateManager {
                 completion(.failure(.io(error)))
             }
         }
+
+        engine.captureState(completion: handleCapture)
+    }
+
+    private func compress(_ data: Data) -> Data? {
+        let algorithm: NSData.CompressionAlgorithm = .lzfse
+        let source = data as NSData
+        return try? source.compressed(using: algorithm) as Data
+    }
+
+    private func decompress(_ data: Data) -> Data? {
+        let algorithm: NSData.CompressionAlgorithm = .lzfse
+        let source = data as NSData
+        return try? source.decompressed(using: algorithm) as Data
     }
 
     /// Loads `slot` and restores it into `engine` (thread-safe - see
@@ -142,8 +155,7 @@ final class SaveStateManager {
             return
         }
 
-        let decompressedResult: Data? = try? (payload.compressedMemory as NSData).decompressed(using: .lzfse)
-        guard let decompressed = decompressedResult,
+        guard let decompressed = decompress(payload.compressedMemory),
               decompressed.count == payload.uncompressedMemorySize else {
             completion(.failure(.sizeMismatch))
             return
