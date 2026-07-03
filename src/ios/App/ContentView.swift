@@ -313,6 +313,7 @@ struct GameBrowserView: View {
                                         game: game,
                                         isSelecting: isSelecting,
                                         isSelected: selectedIDs.contains(game.id),
+                                        hasResumeAvailable: gameManager.hasAutoSave(for: game.id),
                                         onTap: {
                                             if isSelecting {
                                                 if selectedIDs.contains(game.id) {
@@ -456,6 +457,7 @@ struct GameCardOptimized: View {
     let game: GameMetadata
     var isSelecting: Bool = false
     var isSelected: Bool = false
+    var hasResumeAvailable: Bool = false
     let onTap: () -> Void
     let onFavoriteTap: () -> Void
     let onDeleteTap: () -> Void
@@ -508,7 +510,26 @@ struct GameCardOptimized: View {
                                 .padding(8)
                             Spacer()
                         } else {
-                            if isNewAndUnplayed {
+                            // Mutually exclusive in practice: launchGame()
+                            // records lastPlayedDate unconditionally on every
+                            // launch, before an auto-save could ever exist -
+                            // a game with a resume available always already
+                            // has lastPlayedDate set, so isNewAndUnplayed is
+                            // never true for it. Safe to share one badge slot.
+                            if hasResumeAvailable {
+                                HStack(spacing: 3) {
+                                    Image(systemName: "clock.arrow.circlepath")
+                                        .font(.system(size: 8, weight: .heavy))
+                                    Text("RESUME")
+                                        .font(.system(size: 9, weight: .heavy))
+                                }
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 3)
+                                .background(Color(red: 0.3, green: 0.6, blue: 1.0))
+                                .cornerRadius(6)
+                                .padding(8)
+                            } else if isNewAndUnplayed {
                                 Text("NEW")
                                     .font(.system(size: 9, weight: .heavy))
                                     .foregroundColor(.white)

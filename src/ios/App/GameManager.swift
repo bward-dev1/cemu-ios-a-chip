@@ -477,6 +477,13 @@ class GameManager: ObservableObject {
         saveStateManager.listSaveStates(for: gameID)
     }
 
+    /// Whether `gameID` has an auto-save to resume from - lets the browser
+    /// show a "Resume available" indicator without the user needing to
+    /// launch the game first to discover it.
+    func hasAutoSave(for gameID: String) -> Bool {
+        saveStateManager.hasSaveState(gameID: gameID, slot: SaveStateManager.autoSaveSlot)
+    }
+
     @discardableResult
     func saveState(gameID: String, slot: Int, label: String) async -> Bool {
         guard let engine = emulationEngine else {
