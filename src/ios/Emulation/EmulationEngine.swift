@@ -105,6 +105,15 @@ class EmulationEngine: NSObject, ObservableObject {
         return cpu?.getState()
     }
 
+    /// Optional JIT compilation status (loops compiled, whether it's enabled).
+    var jitStats: JITStats? {
+        cpu?.jitStats
+    }
+
+    func setJITEnabled(_ enabled: Bool) {
+        cpu?.setJITEnabled(enabled)
+    }
+
     func reset() {
         stopEmulation()
         memory?.reset()

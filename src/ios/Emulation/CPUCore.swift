@@ -8,27 +8,84 @@ class WiiUCPU {
     private var ctr: UInt32 = 0
     private var cr: UInt32 = 0
 
+    /// Set by branch handlers when they change `pc` themselves, so the
+    /// fetch-execute loop knows not to also advance it by 4.
+    private var branched = false
+
     private let memory: MemoryManager
     private var cycleCount: UInt64 = 0
     private var instructionCount: UInt64 = 0
 
-    init(memory: MemoryManager) {
+    private let jit: JITEngine
+
+    init(memory: MemoryManager, jitEnabled: Bool = true) {
         self.memory = memory
         self.pc = 0x80004000
+        self.jit = JITEngine(enabled: jitEnabled)
+    }
+
+    /// Optional JIT status, e.g. for a debug overlay. Safe to ignore.
+    var jitStats: JITStats { jit.stats }
+
+    func setJITEnabled(_ enabled: Bool) {
+        jit.setEnabled(enabled)
     }
 
     func executeInstruction() -> UInt32 {
-        let opcode = memory.read32(pc)
+        if let loop = jit.cachedLoop(at: pc) {
+            return executeCachedLoop(loop)
+        }
 
-        let primaryOpcode = (opcode >> 26) & 0x3F
+        let startPC = pc
+        let opcode = memory.read32(pc)
         let instruction = PPCInstruction(opcode: opcode)
 
         let cyclesTaken = execute(instruction)
-        pc = pc &+ 4
+        advancePC(from: startPC)
         cycleCount += UInt64(cyclesTaken)
         instructionCount += 1
 
+        if branched {
+            branched = false
+            if pc <= startPC {
+                jit.recordBackEdge(bodyStart: pc, branchPC: startPC, fallthroughPC: startPC &+ 4) { [memory] (fetchPC: UInt32) -> PPCInstruction in
+                    PPCInstruction(opcode: memory.read32(fetchPC))
+                }
+            }
+        }
+
         return cyclesTaken
+    }
+
+    /// Runs a cached loop body: already-decoded instructions execute directly,
+    /// skipping the memory read + `PPCInstruction` decode that the normal path
+    /// pays on every iteration. Falls back to the normal loop on the next
+    /// `executeInstruction()` call once the loop condition stops holding.
+    private func executeCachedLoop(_ loop: JITEngine.CachedLoop) -> UInt32 {
+        var totalCycles: UInt32 = 0
+
+        for instr in loop.instructions {
+            totalCycles += execute(instr)
+            instructionCount += 1
+        }
+
+        totalCycles += execute(loop.branch)
+        instructionCount += 1
+
+        if branched {
+            branched = false
+        } else {
+            pc = loop.fallthroughPC
+        }
+
+        cycleCount += UInt64(totalCycles)
+        return totalCycles
+    }
+
+    private func advancePC(from startPC: UInt32) {
+        if !branched {
+            pc = startPC &+ 4
+        }
     }
 
     private func execute(_ instr: PPCInstruction) -> UInt32 {
@@ -92,6 +149,7 @@ class WiiUCPU {
         let taken = evaluateBranchCondition(bo, bi)
         if taken {
             pc = pc &+ (Int32(bitPattern: bd << 2) >= 0 ? UInt32(bitPattern: Int32(bitPattern: bd) << 2) : UInt32(bitPattern: Int32(bitPattern: bd) << 2))
+            branched = true
         }
         return 1
     }
@@ -99,6 +157,7 @@ class WiiUCPU {
     private func executeB(_ instr: PPCInstruction) -> UInt32 {
         let li = instr.li
         pc = UInt32(bitPattern: Int32(bitPattern: li) << 2)
+        branched = true
         return 1
     }
 
