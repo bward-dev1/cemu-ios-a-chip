@@ -132,7 +132,10 @@ class GPUContext {
     private let library: MTLLibrary?
 
     init() {
-        self.device = MTLCreateSystemDefaultDevice()!
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            fatalError("Metal is not available on this device")
+        }
+        self.device = device
         self.commandQueue = device.makeCommandQueue()
         self.library = device.makeDefaultLibrary()
     }

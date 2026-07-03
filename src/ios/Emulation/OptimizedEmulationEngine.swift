@@ -160,7 +160,10 @@ class OptimizedGPUContext {
     private let framePoolSize = 3
 
     init() {
-        self.device = MTLCreateSystemDefaultDevice()!
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            fatalError("Metal is not available on this device")
+        }
+        self.device = device
         self.commandQueue = device.makeCommandQueue()
         self.commandQueue?.label = "CemuEmulatorCommandQueue"
 
@@ -175,8 +178,12 @@ class OptimizedGPUContext {
             height: 720,
             mipmapped: false
         )
+        // .private, not .memoryless: these textures are read back by
+        // MetalRenderer in a *separate* render pass on a later frame, and
+        // memoryless textures only exist for the duration of the pass that
+        // wrote them (no host- or later-pass-readable backing store).
         descriptor.usage = [.renderTarget, .shaderRead]
-        descriptor.storageMode = .memoryless
+        descriptor.storageMode = .private
 
         for _ in 0..<framePoolSize {
             if let texture = device.makeTexture(descriptor: descriptor) {

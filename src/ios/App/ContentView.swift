@@ -36,6 +36,8 @@ struct GameBrowserView: View {
     @Binding var showingGameBrowser: Bool
     @Binding var showingFavorites: Bool
     @State private var searchText = ""
+    @State private var showingImporter = false
+    @State private var isImporting = false
 
     var filteredGames: [GameMetadata] {
         let gamesToShow = showingFavorites ? gameManager.favorites : gameManager.games
@@ -72,6 +74,24 @@ struct GameBrowserView: View {
 
                     VStack(alignment: .trailing, spacing: 4) {
                         HStack(spacing: 8) {
+                            Button(action: { showingImporter = true }) {
+                                Group {
+                                    if isImporting {
+                                        ProgressView()
+                                            .tint(.white)
+                                    } else {
+                                        Image(systemName: "square.and.arrow.up")
+                                    }
+                                }
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(Color(red: 0.4, green: 0.6, blue: 1.0))
+                            }
+                            .frame(width: 44, height: 44)
+                            .background(Color.white.opacity(0.05))
+                            .cornerRadius(12)
+                            .disabled(isImporting)
+                            .accessibilityLabel("Upload ROM")
+
                             Button(action: { showingFavorites.toggle() }) {
                                 Image(systemName: showingFavorites ? "heart.fill" : "heart")
                                     .font(.system(size: 16, weight: .semibold))
@@ -105,8 +125,10 @@ struct GameBrowserView: View {
                         LoadingView()
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else if filteredGames.isEmpty {
-                        EmptyGamesView()
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        EmptyGamesView(showingFavorites: showingFavorites) {
+                            showingImporter = true
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
                         ScrollView(showsIndicators: false) {
                             LazyVGrid(
@@ -133,6 +155,27 @@ struct GameBrowserView: View {
                 }
                 .frame(maxHeight: .infinity)
             }
+        }
+        .sheet(isPresented: $showingImporter) {
+            ROMDocumentPicker { urls in
+                isImporting = true
+                Task {
+                    await gameManager.importROMs(from: urls)
+                    isImporting = false
+                }
+            }
+            .ignoresSafeArea()
+        }
+        .alert(
+            "Import Problem",
+            isPresented: Binding(
+                get: { gameManager.lastImportError != nil },
+                set: { if !$0 { gameManager.lastImportError = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(gameManager.lastImportError ?? "")
         }
     }
 }
@@ -292,25 +335,55 @@ struct LoadingView: View {
 }
 
 struct EmptyGamesView: View {
+    let showingFavorites: Bool
+    let onUploadTap: () -> Void
+
     var body: some View {
         VStack(spacing: 16) {
-            Image(systemName: "doc.questionmark")
+            Image(systemName: showingFavorites ? "heart.slash" : "doc.questionmark")
                 .font(.system(size: 56, weight: .regular))
                 .foregroundColor(Color(red: 0.4, green: 0.6, blue: 1.0).opacity(0.5))
 
             VStack(spacing: 8) {
-                Text("No Games Found")
+                Text(showingFavorites ? "No Favorites Yet" : "No Games Found")
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundColor(.white)
 
-                VStack(alignment: .center, spacing: 4) {
-                    Text("Add .wua, .wud, .rpx, or .iso files")
+                if showingFavorites {
+                    Text("Tap the heart on a game to add it here")
                         .font(.system(size: 13, weight: .regular))
                         .foregroundColor(Color(red: 0.6, green: 0.6, blue: 0.6))
+                } else {
+                    Text("Upload a .wua, .wud, .rpx, or .iso file to get started")
+                        .font(.system(size: 13, weight: .regular))
+                        .foregroundColor(Color(red: 0.6, green: 0.6, blue: 0.6))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
+                }
+            }
 
-                    Text("to Documents/Roms/ on your device")
-                        .font(.system(size: 13, weight: .regular))
-                        .foregroundColor(Color(red: 0.6, green: 0.6, blue: 0.6))
+            if !showingFavorites {
+                Button(action: onUploadTap) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: 14, weight: .semibold))
+                        Text("Upload ROM")
+                            .font(.system(size: 14, weight: .semibold))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 12)
+                    .background(
+                        LinearGradient(
+                            gradient: Gradient(colors: [
+                                Color(red: 0.3, green: 0.6, blue: 1.0),
+                                Color(red: 0.2, green: 0.5, blue: 0.95)
+                            ]),
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .cornerRadius(10)
                 }
             }
         }
@@ -376,6 +449,17 @@ struct EmulatorViewOptimized: View {
                                 .font(.system(size: 12, weight: .semibold))
                             Text("\(gameManager.getFrameRate()) FPS")
                                 .font(.system(size: 12, weight: .semibold, design: .monospaced))
+
+                            if let jit = gameManager.jitStats, jit.isEnabled, jit.compiledLoops > 0 {
+                                Divider()
+                                    .frame(height: 12)
+                                    .background(Color.white.opacity(0.2))
+
+                                Image(systemName: "bolt.fill")
+                                    .font(.system(size: 10, weight: .semibold))
+                                Text("\(jit.compiledLoops)")
+                                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                            }
                         }
                         .foregroundColor(gameManager.getFrameRate() >= 20 ? Color(red: 0.4, green: 0.9, blue: 0.4) : Color(red: 1.0, green: 0.6, blue: 0.4))
                         .frame(height: 40)
@@ -395,19 +479,20 @@ struct EmulatorViewOptimized: View {
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
 
-                #if os(iOS)
                 MetalViewIOS(gameManager: gameManager)
                     .ignoresSafeArea()
-                #else
-                MetalView(gameManager: gameManager)
-                    .ignoresSafeArea()
-                #endif
 
                 if showControls {
                     OptimizedControlPanel(
                         skin: controllerSkin,
-                        onDPadInput: { _ in },
-                        onButtonInput: { _ in }
+                        onDPadInput: { _ in
+                            let generator = UIImpactFeedbackGenerator(style: .light)
+                            generator.impactOccurred()
+                        },
+                        onButtonInput: { _ in
+                            let generator = UIImpactFeedbackGenerator(style: .medium)
+                            generator.impactOccurred()
+                        }
                     )
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }

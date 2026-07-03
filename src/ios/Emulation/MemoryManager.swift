@@ -13,7 +13,6 @@ class MemoryManager {
     }
 
     private func setupMemoryMap() {
-        let wiiBoundary = 0x8200_0000
         let gpuBase = 0x0C00_0000
         let ioBase = 0x0D00_0000
 

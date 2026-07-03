@@ -5,7 +5,9 @@ struct MetalViewIOS: UIViewRepresentable {
     var gameManager: GameManager
 
     func makeUIView(context: Context) -> MTKView {
-        let device = MTLCreateSystemDefaultDevice() ?? MTLCreateSystemDefaultDevice()!
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            fatalError("Metal is not available on this device")
+        }
         let view = MTKView()
         view.device = device
         view.delegate = context.coordinator

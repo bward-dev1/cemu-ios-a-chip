@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import SwiftUI
 
@@ -16,6 +17,10 @@ struct GameMetadata: Codable, Identifiable {
     }
 }
 
+enum ROMImportError: Error {
+    case unsupportedFileType(String)
+}
+
 @MainActor
 class GameManager: ObservableObject {
     @Published var games: [GameMetadata] = []
@@ -23,13 +28,28 @@ class GameManager: ObservableObject {
     @Published var isLoading = false
     @Published var currentGame: GameMetadata?
     @Published var emulationState: EmulationState = .idle
+    @Published var lastImportError: String?
+
+    /// Mirrors `emulationEngine.frameRate`. The engine's own `@Published`
+    /// property doesn't propagate to views observing `GameManager` (SwiftUI
+    /// only watches `objectWillChange` on the object it's handed, not nested
+    /// ObservableObjects), so without this the on-screen FPS counter would
+    /// render once and never update again.
+    @Published var frameRate: Int = 0
 
     private let romsDirectory = "Roms"
     private let gameListFile = "games.json"
-    private var emulationEngine: EmulationEngine?
+    private var emulationEngine: OptimizedEmulationEngine?
+    private var frameRateCancellable: AnyCancellable?
 
     init() {
-        emulationEngine = EmulationEngine()
+        let engine = OptimizedEmulationEngine()
+        emulationEngine = engine
+        frameRateCancellable = engine.$frameRate
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] rate in
+                self?.frameRate = rate
+            }
         Task {
             await loadGames()
         }
@@ -82,6 +102,46 @@ class GameManager: ObservableObject {
         }
     }
 
+    /// Copies picked ROM files (already app-local temp copies, since the
+    /// picker is opened with `asCopy: true`) into Documents/Roms/, then
+    /// rescans so they show up immediately.
+    func importROMs(from urls: [URL]) async {
+        let fileManager = FileManager.default
+        guard let documentsPath = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            return
+        }
+
+        let romsPath = documentsPath.appendingPathComponent(romsDirectory)
+        try? fileManager.createDirectory(at: romsPath, withIntermediateDirectories: true)
+
+        var firstError: String?
+
+        for url in urls {
+            let ext = url.pathExtension.lowercased()
+            guard ["wua", "wud", "iso", "rpx"].contains(ext) else {
+                if firstError == nil {
+                    firstError = "\(url.lastPathComponent) isn't a supported ROM type (.wua, .wud, .rpx, .iso)"
+                }
+                continue
+            }
+
+            let destination = romsPath.appendingPathComponent(url.lastPathComponent)
+            do {
+                if fileManager.fileExists(atPath: destination.path) {
+                    try fileManager.removeItem(at: destination)
+                }
+                try fileManager.copyItem(at: url, to: destination)
+            } catch {
+                if firstError == nil {
+                    firstError = "Couldn't import \(url.lastPathComponent): \(error.localizedDescription)"
+                }
+            }
+        }
+
+        lastImportError = firstError
+        await loadGames()
+    }
+
     private func findCover(for gameID: String, in directory: URL) -> String? {
         let fileManager = FileManager.default
 
@@ -127,8 +187,17 @@ class GameManager: ObservableObject {
         currentGame = nil
     }
 
-    func getEmulationEngine() -> EmulationEngine? {
+    func getEmulationEngine() -> OptimizedEmulationEngine? {
         return emulationEngine
+    }
+
+    /// Optional JIT compilation status (loops compiled, whether it's enabled).
+    var jitStats: JITStats? {
+        emulationEngine?.jitStats
+    }
+
+    func setJITEnabled(_ enabled: Bool) {
+        emulationEngine?.setJITEnabled(enabled)
     }
 
     func getFrameTexture() -> MTLTexture? {
@@ -136,7 +205,7 @@ class GameManager: ObservableObject {
     }
 
     func getFrameRate() -> Int {
-        return emulationEngine?.frameRate ?? 0
+        return frameRate
     }
 }
 
