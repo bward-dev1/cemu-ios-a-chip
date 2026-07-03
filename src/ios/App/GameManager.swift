@@ -55,6 +55,7 @@ class GameManager: ObservableObject {
     private let romsDirectory = "Roms"
     private let gameListFile = "games.json"
     private let lastPlayedFile = "lastPlayed.json"
+    private let customTitlesFile = "customTitles.json"
     private var emulationEngine: OptimizedEmulationEngine?
     private var frameRateCancellable: AnyCancellable?
 
@@ -98,6 +99,7 @@ class GameManager: ObservableObject {
 
             let favoriteIDs = loadFavoriteIDs(documentsPath: documentsPath)
             let lastPlayedDates = loadLastPlayedDates(documentsPath: documentsPath)
+            let customTitles = loadCustomTitles(documentsPath: documentsPath)
             var discoveredGames: [GameMetadata] = []
 
             for item in contents {
@@ -109,7 +111,7 @@ class GameManager: ObservableObject {
 
                 let gameMetadata = GameMetadata(
                     id: gameID,
-                    title: gameID,
+                    title: customTitles[gameID] ?? gameID,
                     romPath: item.path,
                     coverPath: findCover(for: gameID, in: romsPath),
                     region: "Unknown",
@@ -225,6 +227,29 @@ class GameManager: ObservableObject {
         }
     }
 
+    /// Sets a custom display title for `game`, persisted separately from the
+    /// ROM filename so renaming never touches the actual file on disk. An
+    /// empty/whitespace-only title is treated as "reset to filename".
+    func renameGame(_ game: GameMetadata, to newTitle: String) async {
+        guard let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            return
+        }
+
+        var titles = loadCustomTitles(documentsPath: documentsPath)
+        let trimmed = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if trimmed.isEmpty || trimmed == game.id {
+            titles.removeValue(forKey: game.id)
+        } else {
+            titles[game.id] = trimmed
+        }
+
+        guard let data = try? JSONEncoder().encode(titles) else { return }
+        try? data.write(to: customTitlesFileURL(documentsPath: documentsPath), options: .atomic)
+
+        await loadGames()
+    }
+
     /// Removes a ROM (and its cover image, if any) from Documents/Roms/ and
     /// updates in-memory + persisted state to match.
     func deleteROM(_ game: GameMetadata) async {
@@ -244,6 +269,7 @@ class GameManager: ObservableObject {
         favorites.removeAll { $0.id == game.id }
         saveFavoriteIDs()
         removeLastPlayed(game.id)
+        removeCustomTitle(game.id)
     }
 
     private func removeLastPlayed(_ gameID: String) {
@@ -256,6 +282,31 @@ class GameManager: ObservableObject {
 
         guard let data = try? JSONEncoder().encode(dates) else { return }
         try? data.write(to: lastPlayedFileURL(documentsPath: documentsPath), options: .atomic)
+    }
+
+    private func customTitlesFileURL(documentsPath: URL) -> URL {
+        documentsPath.appendingPathComponent(customTitlesFile)
+    }
+
+    private func loadCustomTitles(documentsPath: URL) -> [String: String] {
+        let url = customTitlesFileURL(documentsPath: documentsPath)
+        guard let data = try? Data(contentsOf: url),
+              let titles = try? JSONDecoder().decode([String: String].self, from: data) else {
+            return [:]
+        }
+        return titles
+    }
+
+    private func removeCustomTitle(_ gameID: String) {
+        guard let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            return
+        }
+
+        var titles = loadCustomTitles(documentsPath: documentsPath)
+        guard titles.removeValue(forKey: gameID) != nil else { return }
+
+        guard let data = try? JSONEncoder().encode(titles) else { return }
+        try? data.write(to: customTitlesFileURL(documentsPath: documentsPath), options: .atomic)
     }
 
     private func favoritesFileURL(documentsPath: URL) -> URL {

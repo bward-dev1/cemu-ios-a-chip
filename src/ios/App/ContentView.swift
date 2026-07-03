@@ -117,6 +117,8 @@ struct GameBrowserView: View {
     @State private var pendingDelete: GameMetadata?
     @State private var coverPickerTarget: GameMetadata?
     @State private var coverPickerItem: PhotosPickerItem?
+    @State private var renameTarget: GameMetadata?
+    @State private var renameText = ""
     @AppStorage("gameSortOption") private var sortOptionRaw: String = GameSortOption.name.rawValue
 
     private var sortOption: GameSortOption {
@@ -285,6 +287,10 @@ struct GameBrowserView: View {
                                         },
                                         onSetCoverTap: {
                                             coverPickerTarget = game
+                                        },
+                                        onRenameTap: {
+                                            renameText = game.title
+                                            renameTarget = game
                                         }
                                     )
                                 }
@@ -361,6 +367,26 @@ struct GameBrowserView: View {
                 coverPickerTarget = nil
             }
         }
+        .alert(
+            "Rename Game",
+            isPresented: Binding(
+                get: { renameTarget != nil },
+                set: { if !$0 { renameTarget = nil } }
+            )
+        ) {
+            TextField("Title", text: $renameText)
+            Button("Save") {
+                if let game = renameTarget {
+                    Task { await gameManager.renameGame(game, to: renameText) }
+                }
+                renameTarget = nil
+            }
+            Button("Cancel", role: .cancel) {
+                renameTarget = nil
+            }
+        } message: {
+            Text("This only changes the display name, not the file.")
+        }
     }
 }
 
@@ -370,6 +396,7 @@ struct GameCardOptimized: View {
     let onFavoriteTap: () -> Void
     let onDeleteTap: () -> Void
     let onSetCoverTap: () -> Void
+    let onRenameTap: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -464,6 +491,9 @@ struct GameCardOptimized: View {
         .contextMenu {
             Button(action: onFavoriteTap) {
                 Label(game.isFavorite ? "Remove from Favorites" : "Add to Favorites", systemImage: game.isFavorite ? "heart.slash" : "heart")
+            }
+            Button(action: onRenameTap) {
+                Label("Rename", systemImage: "pencil")
             }
             Button(action: onSetCoverTap) {
                 Label("Set Cover Image", systemImage: "photo")
