@@ -28,24 +28,34 @@ final class OptimizedEmulationEngine: NSObject, ObservableObject {
         super.init()
     }
 
-    func loadROM(_ romPath: String) {
+    /// Returns false if the ROM file couldn't be read (missing, unreadable,
+    /// permissions). Callers must check this before calling `startEmulation()`
+    /// - previously this always "succeeded" from the caller's point of view,
+    /// so a bad ROM silently ran the emulation loop against zeroed memory
+    /// while the UI reported .running.
+    @discardableResult
+    func loadROM(_ romPath: String) -> Bool {
         currentRomPath = romPath
         currentGame = URL(fileURLWithPath: romPath).lastPathComponent
 
         memory = MemoryManager(size: 0x1000_0000)
         cpu = WiiUCPU(memory: memory!)
 
-        loadROMFile(romPath)
-        logger.info("ROM loaded: \(self.currentGame)")
+        let loaded = loadROMFile(romPath)
+        if loaded {
+            logger.info("ROM loaded: \(self.currentGame)")
+        }
+        return loaded
     }
 
-    private func loadROMFile(_ path: String) {
+    @discardableResult
+    private func loadROMFile(_ path: String) -> Bool {
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
             logger.error("Failed to load ROM: \(path)")
-            return
+            return false
         }
 
-        guard let memory = memory else { return }
+        guard let memory = memory else { return false }
 
         let romData = [UInt8](data)
         let chunkSize = 1_000_000
@@ -56,6 +66,7 @@ final class OptimizedEmulationEngine: NSObject, ObservableObject {
         }
 
         logger.info("ROM data loaded: \(romData.count) bytes")
+        return true
     }
 
     func startEmulation() {

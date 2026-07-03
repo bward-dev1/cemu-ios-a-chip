@@ -22,26 +22,29 @@ class EmulationEngine: NSObject, ObservableObject {
         super.init()
     }
 
-    func loadROM(_ romPath: String) {
+    @discardableResult
+    func loadROM(_ romPath: String) -> Bool {
         currentRomPath = romPath
         currentGame = URL(fileURLWithPath: romPath).lastPathComponent
 
         memory = MemoryManager(size: 0x2000_0000)
         cpu = WiiUCPU(memory: memory!)
 
-        loadROMFile(romPath)
+        return loadROMFile(romPath)
     }
 
-    private func loadROMFile(_ path: String) {
+    @discardableResult
+    private func loadROMFile(_ path: String) -> Bool {
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
             print("Failed to load ROM: \(path)")
-            return
+            return false
         }
 
-        guard let memory = memory else { return }
+        guard let memory = memory else { return false }
 
         let romData = [UInt8](data)
         memory.writeBuffer(0x80004000, buffer: romData)
+        return true
     }
 
     func startEmulation() {

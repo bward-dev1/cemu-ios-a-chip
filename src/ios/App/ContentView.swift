@@ -17,6 +17,14 @@ struct ContentView: View {
                     showingGameBrowser: $showingGameBrowser,
                     showingFavorites: $showingFavorites
                 )
+            } else if gameManager.emulationState == .error {
+                LaunchErrorView(
+                    message: gameManager.lastLaunchError ?? "This game couldn't be launched.",
+                    onBack: {
+                        gameManager.stopEmulation()
+                        showingGameBrowser = true
+                    }
+                )
             } else if let game = selectedGame, gameManager.emulationState == .running {
                 EmulatorViewOptimized(
                     game: game,
@@ -27,6 +35,45 @@ struct ContentView: View {
             }
         }
         .ignoresSafeArea()
+    }
+}
+
+struct LaunchErrorView: View {
+    let message: String
+    let onBack: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+
+            VStack(spacing: 20) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 48, weight: .regular))
+                    .foregroundColor(Color(red: 1.0, green: 0.6, blue: 0.4))
+
+                Text("Couldn't Launch Game")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundColor(.white)
+
+                Text(message)
+                    .font(.system(size: 14, weight: .regular))
+                    .foregroundColor(Color(red: 0.7, green: 0.7, blue: 0.7))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 40)
+
+                Button(action: onBack) {
+                    Text("Back to Library")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 12)
+                        .background(Color.white.opacity(0.15))
+                        .cornerRadius(10)
+                }
+                .padding(.top, 8)
+            }
+            .padding(24)
+        }
     }
 }
 

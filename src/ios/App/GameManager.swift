@@ -29,6 +29,7 @@ class GameManager: ObservableObject {
     @Published var currentGame: GameMetadata?
     @Published var emulationState: EmulationState = .idle
     @Published var lastImportError: String?
+    @Published var lastLaunchError: String?
 
     /// Mirrors `emulationEngine.frameRate`. The engine's own `@Published`
     /// property doesn't propagate to views observing `GameManager` (SwiftUI
@@ -235,13 +236,20 @@ class GameManager: ObservableObject {
     func launchGame(_ game: GameMetadata) {
         currentGame = game
         emulationState = .loading
+        lastLaunchError = nil
 
         guard let engine = emulationEngine else {
+            lastLaunchError = "The emulation engine failed to initialize."
             emulationState = .error
             return
         }
 
-        engine.loadROM(game.romPath)
+        guard engine.loadROM(game.romPath) else {
+            lastLaunchError = "Couldn't read \"\(game.title)\". The file may be missing, moved, or corrupted."
+            emulationState = .error
+            return
+        }
+
         engine.startEmulation()
         emulationState = .running
     }
