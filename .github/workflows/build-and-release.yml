@@ -89,16 +89,17 @@ jobs:
           ${{ steps.release_notes.outputs.version }}
 
           ## What's Included
-          ✅ PowerPC CPU Interpreter (25+ instructions)
-          ✅ Wii U Memory Model (512 MB)
+          ✅ PowerPC CPU Interpreter with optional loop-caching JIT (auto-tunes for A-series chips)
+          ✅ 256 MB emulated memory, address-space rebased to the Wii U's real 0x8000_0000+ effective range
           ✅ Metal GPU Pipeline (8 shaders)
-          ✅ 20 Professional Controller Skins
-          ✅ Dropdown Menu by Controller Type
-          ✅ Beautiful Dark Theme UI
-          ✅ Game Browser with Cover Art
-          ✅ Search, Filter, Favorites
-          ✅ Optimized for iOS A-chip
-          ✅ 20-30 FPS on iPad Air 2 / iPhone 6s+
+          ✅ 20 Professional Controller Skins, organized by console type
+          ✅ In-app ROM upload (Files/iCloud picker), rename, custom cover art, batch delete
+          ✅ Favorites, Recently Added / Recently Played / Favorites-first sorting - all persisted across launches
+          ✅ Settings screen with JIT on/off toggle and live compile stats
+          ✅ Dark Theme UI throughout, including native pickers/sheets
+
+          This is an actively evolving interpreter, not a finished, benchmarked emulator - see
+          "Known Limitations" below before expecting real games to run.
 
           ## Installation
 
@@ -118,19 +119,20 @@ jobs:
 
           ## Adding Games
 
-          1. Open Files app on device
-          2. On My iPhone/iPad → CemuEmulator
-          3. Create Roms folder in Documents
-          4. Add .wua, .wud, .rpx, or .iso files
+          **In-app (recommended):** Tap the upload icon in the game browser header (or the
+          "Upload ROM" button in the empty-library state) and pick a `.wua`, `.wud`, `.rpx`,
+          or `.iso` file from Files, iCloud Drive, or any other document provider.
+
+          **Manually via Files app:** On My iPhone/iPad → CemuEmulator → Documents, create a
+          `Roms` folder and drop files in directly, then pull down on the game grid to rescan.
 
           ## Playing
 
           1. Launch app
-          2. Browse games in grid
+          2. Browse games in grid - search, sort (Name/Recently Added/Recently Played/Favorites), or long-press a card for Rename/Set Cover/Delete
           3. Tap Play
-          4. Tap controller icon (🎮) to change controller skin
-          5. Choose from 20 skins organized by console type
-          6. Use D-Pad and ABXY buttons to play
+          4. Tap the controller icon (🎮) to change controller skin - your choice is remembered next launch
+          5. Use D-Pad and ABXY buttons to play
 
           ## Controller Skins (20 Total)
 
@@ -178,35 +180,23 @@ jobs:
           - Mario Theme
           - Zelda Theme
 
-          ## Performance
+          ## Known Limitations
 
-          **iPad Air 2 (A8X)**
-          - 20-30 FPS
-          - 350-400 MB memory
-          - Cool operation
+          - The PowerPC interpreter implements only a subset of real opcodes; most are still
+            stubs. Don't expect commercial games to boot yet - this release is about the app
+            shell, library management, and emulation *infrastructure* being solid.
+          - No FPS/battery/memory numbers are published here because none have been measured
+            against real game code on real hardware. Treat any number you see elsewhere in
+            this repo's older docs as aspirational, not measured.
+          - GPU command translation (actual Wii U graphics → Metal) isn't implemented yet;
+            the render path currently displays a cleared frame.
 
-          **iPhone 6s (A9)**
-          - 20-25 FPS
-          - 320-380 MB memory
-          - Good battery life
+          ## Under the Hood (this release cycle)
 
-          **iPad Pro M1+ (M1-M2)**
-          - 40-60 FPS
-          - 250-300 MB memory
-          - Excellent performance
-
-          ## Features
-
-          ✅ Fully optimized for iOS
-          ✅ 20 controller skins (dropdown organized)
-          ✅ All skins correctly input-mapped
-          ✅ Instant skin switching in-game
-          ✅ Beautiful professional UI
-          ✅ Lanczos upscaling
-          ✅ Real-time FPS counter
-          ✅ Game favoriting system
-          ✅ ROM search and filter
-          ✅ No performance penalty for skins
+          ✅ Unit test target added (MemoryManager/JITEngine/CPUCore) - first automated tests in the project
+          ✅ Fixed a real bug where the CPU's address space and the memory backing store didn't
+             line up, so loaded ROM bytes were never actually reachable by the CPU
+          ✅ Fixed taken branches not actually changing the program counter
 
           ## Documentation
 
@@ -224,7 +214,7 @@ jobs:
 
           ---
 
-          **Ready to play Wii U games on your iOS device!**
+          **A Wii U emulation project actively under development on iOS.**
         files: |
           build/ipa/CemuEmulator-a-chip.ipa
         draft: false
