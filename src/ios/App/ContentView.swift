@@ -38,6 +38,8 @@ struct GameBrowserView: View {
     @State private var searchText = ""
     @State private var showingImporter = false
     @State private var isImporting = false
+    @State private var showingSettings = false
+    @State private var pendingDelete: GameMetadata?
 
     var filteredGames: [GameMetadata] {
         let gamesToShow = showingFavorites ? gameManager.favorites : gameManager.games
@@ -101,6 +103,16 @@ struct GameBrowserView: View {
                             .background(Color.white.opacity(0.05))
                             .cornerRadius(12)
 
+                            Button(action: { showingSettings = true }) {
+                                Image(systemName: "gearshape.fill")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundColor(Color(red: 0.6, green: 0.6, blue: 0.6))
+                            }
+                            .frame(width: 44, height: 44)
+                            .background(Color.white.opacity(0.05))
+                            .cornerRadius(12)
+                            .accessibilityLabel("Settings")
+
                             VStack(alignment: .trailing, spacing: 2) {
                                 Text("\(filteredGames.count)")
                                     .font(.system(size: 14, weight: .bold, design: .monospaced))
@@ -145,6 +157,9 @@ struct GameBrowserView: View {
                                         },
                                         onFavoriteTap: {
                                             gameManager.toggleFavorite(game)
+                                        },
+                                        onDeleteTap: {
+                                            pendingDelete = game
                                         }
                                     )
                                 }
@@ -177,6 +192,29 @@ struct GameBrowserView: View {
         } message: {
             Text(gameManager.lastImportError ?? "")
         }
+        .sheet(isPresented: $showingSettings) {
+            SettingsView(gameManager: gameManager)
+        }
+        .confirmationDialog(
+            "Delete \"\(pendingDelete?.title ?? "")\"?",
+            isPresented: Binding(
+                get: { pendingDelete != nil },
+                set: { if !$0 { pendingDelete = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete ROM", role: .destructive) {
+                if let game = pendingDelete {
+                    Task { await gameManager.deleteROM(game) }
+                }
+                pendingDelete = nil
+            }
+            Button("Cancel", role: .cancel) {
+                pendingDelete = nil
+            }
+        } message: {
+            Text("This removes the ROM file from your device. This can't be undone.")
+        }
     }
 }
 
@@ -184,6 +222,7 @@ struct GameCardOptimized: View {
     let game: GameMetadata
     let onTap: () -> Void
     let onFavoriteTap: () -> Void
+    let onDeleteTap: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -275,6 +314,14 @@ struct GameCardOptimized: View {
         .background(Color(red: 0.08, green: 0.10, blue: 0.18))
         .cornerRadius(12)
         .shadow(color: Color.black.opacity(0.3), radius: 8, x: 0, y: 4)
+        .contextMenu {
+            Button(action: onFavoriteTap) {
+                Label(game.isFavorite ? "Remove from Favorites" : "Add to Favorites", systemImage: game.isFavorite ? "heart.slash" : "heart")
+            }
+            Button(role: .destructive, action: onDeleteTap) {
+                Label("Delete ROM", systemImage: "trash")
+            }
+        }
     }
 }
 

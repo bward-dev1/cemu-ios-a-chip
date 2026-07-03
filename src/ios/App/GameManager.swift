@@ -37,6 +37,18 @@ class GameManager: ObservableObject {
     /// render once and never update again.
     @Published var frameRate: Int = 0
 
+    /// Whether the JIT is on. Persisted and pushed into the engine on launch
+    /// and on every change.
+    @Published var jitEnabled: Bool = true {
+        didSet {
+            guard jitEnabled != oldValue else { return }
+            emulationEngine?.setJITEnabled(jitEnabled)
+            UserDefaults.standard.set(jitEnabled, forKey: Self.jitEnabledDefaultsKey)
+        }
+    }
+
+    private static let jitEnabledDefaultsKey = "jitEnabled"
+
     private let romsDirectory = "Roms"
     private let gameListFile = "games.json"
     private var emulationEngine: OptimizedEmulationEngine?
@@ -50,6 +62,12 @@ class GameManager: ObservableObject {
             .sink { [weak self] rate in
                 self?.frameRate = rate
             }
+
+        if UserDefaults.standard.object(forKey: Self.jitEnabledDefaultsKey) != nil {
+            jitEnabled = UserDefaults.standard.bool(forKey: Self.jitEnabledDefaultsKey)
+        }
+        engine.setJITEnabled(jitEnabled)
+
         Task {
             await loadGames()
         }
@@ -74,6 +92,7 @@ class GameManager: ObservableObject {
                 includingPropertiesForKeys: nil
             )
 
+            let favoriteIDs = loadFavoriteIDs(documentsPath: documentsPath)
             var discoveredGames: [GameMetadata] = []
 
             for item in contents {
@@ -89,7 +108,8 @@ class GameManager: ObservableObject {
                     coverPath: findCover(for: gameID, in: romsPath),
                     region: "Unknown",
                     releaseDate: "Unknown",
-                    genre: "Game"
+                    genre: "Game",
+                    isFavorite: favoriteIDs.contains(gameID)
                 )
 
                 discoveredGames.append(gameMetadata)
@@ -164,7 +184,52 @@ class GameManager: ObservableObject {
             } else {
                 favorites.removeAll { $0.id == game.id }
             }
+
+            saveFavoriteIDs()
         }
+    }
+
+    /// Removes a ROM (and its cover image, if any) from Documents/Roms/ and
+    /// updates in-memory + persisted state to match.
+    func deleteROM(_ game: GameMetadata) async {
+        let fileManager = FileManager.default
+        let romURL = URL(fileURLWithPath: game.romPath)
+
+        try? fileManager.removeItem(at: romURL)
+        if let coverPath = game.coverPath {
+            try? fileManager.removeItem(at: URL(fileURLWithPath: coverPath))
+        }
+
+        if currentGame?.id == game.id {
+            stopEmulation()
+        }
+
+        games.removeAll { $0.id == game.id }
+        favorites.removeAll { $0.id == game.id }
+        saveFavoriteIDs()
+    }
+
+    private func favoritesFileURL(documentsPath: URL) -> URL {
+        documentsPath.appendingPathComponent(gameListFile)
+    }
+
+    private func loadFavoriteIDs(documentsPath: URL) -> Set<String> {
+        let url = favoritesFileURL(documentsPath: documentsPath)
+        guard let data = try? Data(contentsOf: url),
+              let ids = try? JSONDecoder().decode(Set<String>.self, from: data) else {
+            return []
+        }
+        return ids
+    }
+
+    private func saveFavoriteIDs() {
+        guard let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            return
+        }
+
+        let ids = Set(games.filter { $0.isFavorite }.map { $0.id })
+        guard let data = try? JSONEncoder().encode(ids) else { return }
+        try? data.write(to: favoritesFileURL(documentsPath: documentsPath), options: .atomic)
     }
 
     func launchGame(_ game: GameMetadata) {
@@ -197,7 +262,7 @@ class GameManager: ObservableObject {
     }
 
     func setJITEnabled(_ enabled: Bool) {
-        emulationEngine?.setJITEnabled(enabled)
+        jitEnabled = enabled
     }
 
     func getFrameTexture() -> MTLTexture? {
