@@ -937,6 +937,34 @@ struct EmulatorViewOptimized: View {
 
                 MetalViewIOS(gameManager: gameManager)
                     .ignoresSafeArea()
+                    .overlay(
+                        // Real Wii U GPU command translation isn't implemented
+                        // yet - the render path intentionally displays a
+                        // cleared (black) frame rather than actual game
+                        // graphics, and always has, even before the green-
+                        // screen bug existed. Without this label, a black
+                        // screen after a correctly-working launch reads as
+                        // "still broken" to anyone who doesn't already know
+                        // that distinction, which is exactly the kind of
+                        // confusion that led to the same bug being reported
+                        // as unfixed across many releases in a row.
+                        VStack(spacing: 6) {
+                            Image(systemName: "wrench.and.screwdriver")
+                                .font(.system(size: 20, weight: .regular))
+                            Text("GPU rendering isn't implemented yet")
+                                .font(.system(size: 13, weight: .semibold))
+                            Text("This black screen is expected - not a bug")
+                                .font(.system(size: 11, weight: .regular))
+                        }
+                        .foregroundColor(Color.white.opacity(0.35))
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("GPU rendering isn't implemented yet. This black screen during gameplay is expected, not a bug.")
+                        // Bottom padding nudges this up from dead-center so it
+                        // clears the on-screen touch controls docked at the
+                        // bottom of the screen when they're visible.
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                        .padding(.bottom, 180)
+                    )
 
                 if showControls {
                     OptimizedControlPanel(

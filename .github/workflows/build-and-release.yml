@@ -88,10 +88,21 @@ jobs:
           ## Version
           ${{ steps.release_notes.outputs.version }}
 
+          ## Before you test a game: what you'll actually see
+
+          **Gameplay currently shows a black screen. This is expected, not a bug.**
+          Real Wii U GPU command translation (turning the console's actual graphics
+          commands into something Metal can draw) isn't implemented yet - the render
+          path intentionally clears to black every frame instead. If you launch a
+          game and see black instead of the actual game, that's this release working
+          correctly. This is different from the old "green screen of death" (a
+          Metal crash pattern from sampling an unbound texture, fixed in v2.0.0) -
+          black is the current correct/expected output, green was the bug.
+
           ## What's Included
           ✅ PowerPC CPU Interpreter with optional loop-caching JIT (auto-tunes for A-series chips)
           ✅ 256 MB emulated memory, address-space rebased to the Wii U's real 0x8000_0000+ effective range
-          ✅ Metal GPU Pipeline (8 shaders)
+          ✅ Metal display pipeline (renders a cleared frame today; no real Wii U GPU command translation yet - see above)
           ✅ 20 Professional Controller Skins, organized by console type
           ✅ In-app ROM upload (Files/iCloud picker), rename, custom cover art, batch delete
           ✅ Favorites, Recently Added / Recently Played / Favorites-first sorting - all persisted across launches
