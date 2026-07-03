@@ -95,7 +95,8 @@ jobs:
           ✅ 20 Professional Controller Skins, organized by console type
           ✅ In-app ROM upload (Files/iCloud picker), rename, custom cover art, batch delete
           ✅ Favorites, Recently Added / Recently Played / Favorites-first sorting - all persisted across launches
-          ✅ Save states: 3 slots per game, compressed CPU+memory snapshots, thread-safe capture/restore
+          ✅ Save states: 3 manual slots per game, compressed CPU+memory snapshots, thread-safe capture/restore
+          ✅ Auto-resume: leaving a game (Back button or backgrounding the app) auto-saves your spot; relaunching that game silently picks up where you left off, with a "RESUME" badge on its card in the library
           ✅ Settings screen with JIT on/off toggle and live compile stats
           ✅ Dark Theme UI throughout, including native pickers/sheets
 
