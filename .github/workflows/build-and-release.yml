@@ -55,13 +55,13 @@ jobs:
 
     - name: Create IPA from Archive
       run: |
-        mkdir -p build/ipa
-        cd build/CemuEmulator.xcarchive/Products/Applications
-        mkdir -p Payload
-        cp -r CemuEmulator.app Payload/
-        cd ../../../..
-        zip -r ipa/CemuEmulator-a-chip.ipa Payload
-        ls -lh ipa/
+        mkdir -p build/ipa/Payload
+        find build/CemuEmulator.xcarchive -name "CemuEmulator.app" -type d -exec cp -r {} build/ipa/Payload/ \;
+        cd build/ipa
+        zip -r CemuEmulator-a-chip.ipa Payload/
+        ls -lh *.ipa
+        cd ../..
+        ls -lh build/ipa/
 
     - name: Generate Release Notes
       id: release_notes
