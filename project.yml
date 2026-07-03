@@ -44,3 +44,21 @@ targets:
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
         MinimumOSVersion: "16.0"
+
+  CemuEmulatorTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "16.0"
+
+    sources:
+      - path: src/iosTests
+
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.brandon.CemuEmulatorTests
+      SWIFT_VERSION: "5.9"
+      CODE_SIGN_IDENTITY: ""
+      CODE_SIGNING_REQUIRED: "NO"
+      CODE_SIGNING_ALLOWED: "NO"
+
+    dependencies:
+      - target: CemuEmulator

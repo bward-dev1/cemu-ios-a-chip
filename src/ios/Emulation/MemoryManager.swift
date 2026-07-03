@@ -1,12 +1,25 @@
 import Foundation
 
+/// Backs the emulated address space with a single flat array, rebased to
+/// `baseAddress` so real Wii U effective addresses (main RAM starts around
+/// 0x8000_0000) don't require literally allocating a multi-gigabyte buffer.
+///
+/// Every accessor subtracts `baseAddress` before indexing into `memory` -
+/// without this, a CPU whose PC starts at 0x8000_4000 against a 256MB backing
+/// array would have every single read/write silently fail its bounds check
+/// (addr way beyond memorySize) and be treated as reading/writing zero. That
+/// was a real, previously-undiscovered bug: the emulated CPU never actually
+/// fetched a byte of loaded ROM data, ever, because nothing rebased the
+/// address space to match the backing store's actual size.
 class MemoryManager {
     private var memory: [UInt8]
     private let memorySize: Int
+    private let baseAddress: UInt32
     private let mmioHandlers: NSMutableDictionary
 
-    init(size: Int = 0x2000_0000) {
+    init(size: Int = 0x2000_0000, baseAddress: UInt32 = 0x8000_0000) {
         self.memorySize = size
+        self.baseAddress = baseAddress
         self.memory = Array(repeating: 0, count: size)
         self.mmioHandlers = NSMutableDictionary()
         setupMemoryMap()
@@ -24,26 +37,30 @@ class MemoryManager {
         mmioHandlers[name] = MMIOHandler(range: range, name: name)
     }
 
+    /// Rebased index into `memory`, or nil if `address` falls outside this
+    /// manager's backing store.
+    private func localOffset(_ address: UInt32) -> Int? {
+        let offset = Int(address) - Int(baseAddress)
+        return offset >= 0 ? offset : nil
+    }
+
     func read8(_ address: UInt32) -> UInt8 {
-        let addr = Int(address)
-        if addr >= memorySize { return 0 }
+        guard let addr = localOffset(address), addr < memorySize else { return 0 }
         return memory[addr]
     }
 
     func read16(_ address: UInt32) -> UInt16 {
-        let addr = Int(address)
-        if addr >= memorySize - 1 { return 0 }
+        guard let addr = localOffset(address), addr < memorySize - 1 else { return 0 }
         let low = UInt16(memory[addr])
         let high = UInt16(memory[addr + 1])
         return (high << 8) | low
     }
 
     func read32(_ address: UInt32) -> UInt32 {
-        let addr = Int(address)
-        if addr >= memorySize - 3 { return 0 }
+        guard let addr = localOffset(address), addr < memorySize - 3 else { return 0 }
 
-        if let handler = findMMIOHandler(for: addr) {
-            return handler.read32(addr)
+        if let handler = findMMIOHandler(for: Int(address)) {
+            return handler.read32(Int(address))
         }
 
         let b0 = UInt32(memory[addr])
@@ -54,57 +71,49 @@ class MemoryManager {
     }
 
     func read64(_ address: UInt32) -> UInt64 {
-        let addr = Int(address)
-        if addr >= memorySize - 7 { return 0 }
+        guard let addr = localOffset(address), addr < memorySize - 7 else { return 0 }
         let low = read32(address)
-        let high = read32(address + 4)
+        let high = read32(address &+ 4)
         return (UInt64(high) << 32) | UInt64(low)
     }
 
     func readBuffer(_ address: UInt32, length: Int) -> [UInt8] {
-        let addr = Int(address)
-        guard addr >= 0, addr + length <= memorySize else { return [] }
+        guard let addr = localOffset(address), addr + length <= memorySize else { return [] }
         return Array(memory[addr..<(addr + length)])
     }
 
     func write8(_ address: UInt32, _ value: UInt8) {
-        let addr = Int(address)
-        if addr >= 0 && addr < memorySize {
-            memory[addr] = value
-        }
+        guard let addr = localOffset(address), addr < memorySize else { return }
+        memory[addr] = value
     }
 
     func write16(_ address: UInt32, _ value: UInt16) {
-        let addr = Int(address)
-        if addr >= 0 && addr + 1 < memorySize {
-            memory[addr] = UInt8(value & 0xFF)
-            memory[addr + 1] = UInt8((value >> 8) & 0xFF)
-        }
+        guard let addr = localOffset(address), addr + 1 < memorySize else { return }
+        memory[addr] = UInt8(value & 0xFF)
+        memory[addr + 1] = UInt8((value >> 8) & 0xFF)
     }
 
     func write32(_ address: UInt32, _ value: UInt32) {
-        let addr = Int(address)
-        if addr >= 0 && addr + 3 < memorySize {
-            if let handler = findMMIOHandler(for: addr) {
-                handler.write32(addr, value)
-                return
-            }
+        guard let addr = localOffset(address), addr + 3 < memorySize else { return }
 
-            memory[addr] = UInt8(value & 0xFF)
-            memory[addr + 1] = UInt8((value >> 8) & 0xFF)
-            memory[addr + 2] = UInt8((value >> 16) & 0xFF)
-            memory[addr + 3] = UInt8((value >> 24) & 0xFF)
+        if let handler = findMMIOHandler(for: Int(address)) {
+            handler.write32(Int(address), value)
+            return
         }
+
+        memory[addr] = UInt8(value & 0xFF)
+        memory[addr + 1] = UInt8((value >> 8) & 0xFF)
+        memory[addr + 2] = UInt8((value >> 16) & 0xFF)
+        memory[addr + 3] = UInt8((value >> 24) & 0xFF)
     }
 
     func write64(_ address: UInt32, _ value: UInt64) {
         write32(address, UInt32(value & 0xFFFFFFFF))
-        write32(address + 4, UInt32((value >> 32) & 0xFFFFFFFF))
+        write32(address &+ 4, UInt32((value >> 32) & 0xFFFFFFFF))
     }
 
     func writeBuffer(_ address: UInt32, buffer: [UInt8]) {
-        let addr = Int(address)
-        guard addr >= 0, addr + buffer.count <= memorySize else { return }
+        guard let addr = localOffset(address), addr + buffer.count <= memorySize else { return }
         memory.replaceSubrange(addr..<(addr + buffer.count), with: buffer)
     }
 
