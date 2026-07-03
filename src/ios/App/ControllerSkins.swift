@@ -1,8 +1,6 @@
 import SwiftUI
 
 struct ControllerSkinManager {
-    static let defaultSkin = WiiUControllerSkin.standard
-
     enum SkinStyle {
         case standard
         case pro
@@ -19,66 +17,6 @@ struct WiiUControllerSkin {
     let borderColor: Color
     let shadowOpacity: Double
     let cornerRadius: CGFloat
-
-    static let standard = WiiUControllerSkin(
-        name: "Standard",
-        dpadColor: Color(red: 0.7, green: 0.7, blue: 0.7),
-        buttonColors: [
-            "A": Color(red: 0.2, green: 0.8, blue: 0.3),
-            "B": Color(red: 1.0, green: 0.3, blue: 0.2),
-            "X": Color(red: 0.1, green: 0.5, blue: 1.0),
-            "Y": Color(red: 1.0, green: 0.8, blue: 0.1)
-        ],
-        backgroundColor: Color(red: 0.15, green: 0.15, blue: 0.17),
-        borderColor: Color.white.opacity(0.1),
-        shadowOpacity: 0.4,
-        cornerRadius: 24
-    )
-
-    static let pro = WiiUControllerSkin(
-        name: "Pro",
-        dpadColor: Color(red: 0.2, green: 0.2, blue: 0.2),
-        buttonColors: [
-            "A": Color(red: 0.15, green: 0.7, blue: 0.25),
-            "B": Color(red: 0.9, green: 0.2, blue: 0.15),
-            "X": Color(red: 0.0, green: 0.4, blue: 0.95),
-            "Y": Color(red: 0.95, green: 0.7, blue: 0.0)
-        ],
-        backgroundColor: Color(red: 0.1, green: 0.1, blue: 0.12),
-        borderColor: Color.white.opacity(0.15),
-        shadowOpacity: 0.5,
-        cornerRadius: 20
-    )
-
-    static let minimal = WiiUControllerSkin(
-        name: "Minimal",
-        dpadColor: Color.white.opacity(0.8),
-        buttonColors: [
-            "A": Color.white.opacity(0.7),
-            "B": Color.white.opacity(0.7),
-            "X": Color.white.opacity(0.7),
-            "Y": Color.white.opacity(0.7)
-        ],
-        backgroundColor: Color.black.opacity(0.6),
-        borderColor: Color.white.opacity(0.2),
-        shadowOpacity: 0.2,
-        cornerRadius: 12
-    )
-
-    static let dark = WiiUControllerSkin(
-        name: "Dark",
-        dpadColor: Color(red: 0.4, green: 0.4, blue: 0.4),
-        buttonColors: [
-            "A": Color(red: 0.1, green: 0.6, blue: 0.2),
-            "B": Color(red: 0.8, green: 0.15, blue: 0.1),
-            "X": Color(red: 0.0, green: 0.35, blue: 0.9),
-            "Y": Color(red: 0.9, green: 0.65, blue: 0.0)
-        ],
-        backgroundColor: Color(red: 0.08, green: 0.08, blue: 0.1),
-        borderColor: Color.white.opacity(0.08),
-        shadowOpacity: 0.6,
-        cornerRadius: 18
-    )
 }
 
 struct OptimizedControlPanel: View {
