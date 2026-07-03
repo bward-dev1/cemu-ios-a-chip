@@ -272,6 +272,16 @@ class GameManager: ObservableObject {
         removeCustomTitle(game.id)
     }
 
+    /// Deletes several ROMs at once (batch selection UI). Reuses deleteROM()
+    /// per game rather than duplicating its cleanup logic - library sizes
+    /// here are realistically small enough that the redundant favorites-file
+    /// rewrite per item isn't worth a separate optimized path.
+    func deleteROMs(_ gamesToDelete: [GameMetadata]) async {
+        for game in gamesToDelete {
+            await deleteROM(game)
+        }
+    }
+
     private func removeLastPlayed(_ gameID: String) {
         guard let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
             return

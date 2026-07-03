@@ -119,6 +119,9 @@ struct GameBrowserView: View {
     @State private var coverPickerItem: PhotosPickerItem?
     @State private var renameTarget: GameMetadata?
     @State private var renameText = ""
+    @State private var isSelecting = false
+    @State private var selectedIDs: Set<String> = []
+    @State private var confirmingBulkDelete = false
     @AppStorage("gameSortOption") private var sortOptionRaw: String = GameSortOption.name.rawValue
 
     private var sortOption: GameSortOption {
@@ -181,69 +184,99 @@ struct GameBrowserView: View {
 
                     Spacer()
 
-                    VStack(alignment: .trailing, spacing: 4) {
+                    if isSelecting {
                         HStack(spacing: 8) {
-                            Button(action: { showingImporter = true }) {
-                                Group {
-                                    if isImporting {
-                                        ProgressView()
-                                            .tint(.white)
-                                    } else {
-                                        Image(systemName: "square.and.arrow.up")
+                            Button("Cancel") {
+                                isSelecting = false
+                                selectedIDs.removeAll()
+                            }
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(Color(red: 0.6, green: 0.6, blue: 0.6))
+
+                            Text("\(selectedIDs.count) selected")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(.white)
+                                .frame(minWidth: 80)
+
+                            Button(action: { confirmingBulkDelete = true }) {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 16, weight: .semibold))
+                            }
+                            .frame(width: 44, height: 44)
+                            .background(Color.white.opacity(0.05))
+                            .cornerRadius(12)
+                            .foregroundColor(selectedIDs.isEmpty ? Color(red: 0.4, green: 0.4, blue: 0.4) : Color(red: 1.0, green: 0.4, blue: 0.4))
+                            .disabled(selectedIDs.isEmpty)
+                        }
+                    } else {
+                        VStack(alignment: .trailing, spacing: 4) {
+                            HStack(spacing: 8) {
+                                Button(action: { showingImporter = true }) {
+                                    Group {
+                                        if isImporting {
+                                            ProgressView()
+                                                .tint(.white)
+                                        } else {
+                                            Image(systemName: "square.and.arrow.up")
+                                        }
                                     }
-                                }
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundColor(Color(red: 0.4, green: 0.6, blue: 1.0))
-                            }
-                            .frame(width: 44, height: 44)
-                            .background(Color.white.opacity(0.05))
-                            .cornerRadius(12)
-                            .disabled(isImporting)
-                            .accessibilityLabel("Upload ROM")
-
-                            Button(action: { showingFavorites.toggle() }) {
-                                Image(systemName: showingFavorites ? "heart.fill" : "heart")
                                     .font(.system(size: 16, weight: .semibold))
-                                    .foregroundColor(showingFavorites ? Color(red: 1.0, green: 0.4, blue: 0.4) : Color(red: 0.6, green: 0.6, blue: 0.6))
-                            }
-                            .frame(width: 44, height: 44)
-                            .background(Color.white.opacity(0.05))
-                            .cornerRadius(12)
+                                    .foregroundColor(Color(red: 0.4, green: 0.6, blue: 1.0))
+                                }
+                                .frame(width: 44, height: 44)
+                                .background(Color.white.opacity(0.05))
+                                .cornerRadius(12)
+                                .disabled(isImporting)
+                                .accessibilityLabel("Upload ROM")
 
-                            Menu {
-                                Picker("Sort", selection: $sortOptionRaw) {
-                                    ForEach(GameSortOption.allCases, id: \.rawValue) { option in
-                                        Label(option.rawValue, systemImage: option.systemImage)
-                                            .tag(option.rawValue)
+                                Button(action: { showingFavorites.toggle() }) {
+                                    Image(systemName: showingFavorites ? "heart.fill" : "heart")
+                                        .font(.system(size: 16, weight: .semibold))
+                                        .foregroundColor(showingFavorites ? Color(red: 1.0, green: 0.4, blue: 0.4) : Color(red: 0.6, green: 0.6, blue: 0.6))
+                                }
+                                .frame(width: 44, height: 44)
+                                .background(Color.white.opacity(0.05))
+                                .cornerRadius(12)
+
+                                Menu {
+                                    Picker("Sort", selection: $sortOptionRaw) {
+                                        ForEach(GameSortOption.allCases, id: \.rawValue) { option in
+                                            Label(option.rawValue, systemImage: option.systemImage)
+                                                .tag(option.rawValue)
+                                        }
                                     }
+                                    Divider()
+                                    Button(action: { isSelecting = true }) {
+                                        Label("Select Games", systemImage: "checkmark.circle")
+                                    }
+                                } label: {
+                                    Image(systemName: "arrow.up.arrow.down")
+                                        .font(.system(size: 16, weight: .semibold))
+                                        .foregroundColor(Color(red: 0.6, green: 0.6, blue: 0.6))
                                 }
-                            } label: {
-                                Image(systemName: "arrow.up.arrow.down")
-                                    .font(.system(size: 16, weight: .semibold))
-                                    .foregroundColor(Color(red: 0.6, green: 0.6, blue: 0.6))
-                            }
-                            .frame(width: 44, height: 44)
-                            .background(Color.white.opacity(0.05))
-                            .cornerRadius(12)
-                            .accessibilityLabel("Sort games")
+                                .frame(width: 44, height: 44)
+                                .background(Color.white.opacity(0.05))
+                                .cornerRadius(12)
+                                .accessibilityLabel("Sort or select games")
 
-                            Button(action: { showingSettings = true }) {
-                                Image(systemName: "gearshape.fill")
-                                    .font(.system(size: 16, weight: .semibold))
-                                    .foregroundColor(Color(red: 0.6, green: 0.6, blue: 0.6))
-                            }
-                            .frame(width: 44, height: 44)
-                            .background(Color.white.opacity(0.05))
-                            .cornerRadius(12)
-                            .accessibilityLabel("Settings")
+                                Button(action: { showingSettings = true }) {
+                                    Image(systemName: "gearshape.fill")
+                                        .font(.system(size: 16, weight: .semibold))
+                                        .foregroundColor(Color(red: 0.6, green: 0.6, blue: 0.6))
+                                }
+                                .frame(width: 44, height: 44)
+                                .background(Color.white.opacity(0.05))
+                                .cornerRadius(12)
+                                .accessibilityLabel("Settings")
 
-                            VStack(alignment: .trailing, spacing: 2) {
-                                Text("\(filteredGames.count)")
-                                    .font(.system(size: 14, weight: .bold, design: .monospaced))
-                                    .foregroundColor(.white)
-                                Text("games")
-                                    .font(.system(size: 10, weight: .regular))
-                                    .foregroundColor(Color(red: 0.6, green: 0.6, blue: 0.6))
+                                VStack(alignment: .trailing, spacing: 2) {
+                                    Text("\(filteredGames.count)")
+                                        .font(.system(size: 14, weight: .bold, design: .monospaced))
+                                        .foregroundColor(.white)
+                                    Text("games")
+                                        .font(.system(size: 10, weight: .regular))
+                                        .foregroundColor(Color(red: 0.6, green: 0.6, blue: 0.6))
+                                }
                             }
                         }
                     }
@@ -274,10 +307,20 @@ struct GameBrowserView: View {
                                 ForEach(filteredGames) { game in
                                     GameCardOptimized(
                                         game: game,
+                                        isSelecting: isSelecting,
+                                        isSelected: selectedIDs.contains(game.id),
                                         onTap: {
-                                            selectedGame = game
-                                            gameManager.launchGame(game)
-                                            showingGameBrowser = false
+                                            if isSelecting {
+                                                if selectedIDs.contains(game.id) {
+                                                    selectedIDs.remove(game.id)
+                                                } else {
+                                                    selectedIDs.insert(game.id)
+                                                }
+                                            } else {
+                                                selectedGame = game
+                                                gameManager.launchGame(game)
+                                                showingGameBrowser = false
+                                            }
                                         },
                                         onFavoriteTap: {
                                             gameManager.toggleFavorite(game)
@@ -387,11 +430,30 @@ struct GameBrowserView: View {
         } message: {
             Text("This only changes the display name, not the file.")
         }
+        .confirmationDialog(
+            "Delete \(selectedIDs.count) Game\(selectedIDs.count == 1 ? "" : "s")?",
+            isPresented: $confirmingBulkDelete,
+            titleVisibility: .visible
+        ) {
+            Button("Delete \(selectedIDs.count) ROM\(selectedIDs.count == 1 ? "" : "s")", role: .destructive) {
+                let toDelete = gameManager.games.filter { selectedIDs.contains($0.id) }
+                Task {
+                    await gameManager.deleteROMs(toDelete)
+                    selectedIDs.removeAll()
+                    isSelecting = false
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes the ROM files from your device. This can't be undone.")
+        }
     }
 }
 
 struct GameCardOptimized: View {
     let game: GameMetadata
+    var isSelecting: Bool = false
+    var isSelected: Bool = false
     let onTap: () -> Void
     let onFavoriteTap: () -> Void
     let onDeleteTap: () -> Void
@@ -420,31 +482,46 @@ struct GameCardOptimized: View {
                         .scaledToFill()
                         .cornerRadius(12)
                         .clipped()
+                        .opacity(isSelecting && !isSelected ? 0.5 : 1.0)
                 } else {
                     VStack {
                         Image(systemName: "gamecontroller.fill")
                             .font(.system(size: 28))
                             .foregroundColor(Color(red: 0.4, green: 0.6, blue: 1.0))
                     }
+                    .opacity(isSelecting && !isSelected ? 0.5 : 1.0)
                 }
 
                 VStack {
                     HStack {
-                        Spacer()
-                        Button(action: onFavoriteTap) {
-                            Image(systemName: game.isFavorite ? "heart.fill" : "heart")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(game.isFavorite ? Color(red: 1.0, green: 0.4, blue: 0.4) : .white)
-                                .frame(width: 32, height: 32)
-                                .background(Color.black.opacity(0.4))
-                                .cornerRadius(8)
+                        if isSelecting {
+                            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                                .font(.system(size: 20, weight: .semibold))
+                                .foregroundColor(isSelected ? Color(red: 0.4, green: 0.6, blue: 1.0) : .white)
+                                .background(Circle().fill(Color.black.opacity(0.4)).padding(-2))
+                                .padding(8)
+                            Spacer()
+                        } else {
+                            Spacer()
+                            Button(action: onFavoriteTap) {
+                                Image(systemName: game.isFavorite ? "heart.fill" : "heart")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(game.isFavorite ? Color(red: 1.0, green: 0.4, blue: 0.4) : .white)
+                                    .frame(width: 32, height: 32)
+                                    .background(Color.black.opacity(0.4))
+                                    .cornerRadius(8)
+                            }
+                            .padding(8)
                         }
-                        .padding(8)
                     }
                     Spacer()
                 }
             }
             .aspectRatio(3 / 4, contentMode: .fit)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(isSelected ? Color(red: 0.4, green: 0.6, blue: 1.0) : Color.clear, lineWidth: 3)
+            )
 
             VStack(alignment: .leading, spacing: 8) {
                 Text(game.title)
@@ -488,6 +565,11 @@ struct GameCardOptimized: View {
         .background(Color(red: 0.08, green: 0.10, blue: 0.18))
         .cornerRadius(12)
         .shadow(color: Color.black.opacity(0.3), radius: 8, x: 0, y: 4)
+        .onTapGesture {
+            if isSelecting {
+                onTap()
+            }
+        }
         .contextMenu {
             Button(action: onFavoriteTap) {
                 Label(game.isFavorite ? "Remove from Favorites" : "Add to Favorites", systemImage: game.isFavorite ? "heart.slash" : "heart")
