@@ -95,8 +95,14 @@ jobs:
           ✅ 20 Professional Controller Skins, organized by console type
           ✅ In-app ROM upload (Files/iCloud picker), rename, custom cover art, batch delete
           ✅ Favorites, Recently Added / Recently Played / Favorites-first sorting - all persisted across launches
+          ✅ Save states: 3 slots per game, compressed CPU+memory snapshots, thread-safe capture/restore
           ✅ Settings screen with JIT on/off toggle and live compile stats
           ✅ Dark Theme UI throughout, including native pickers/sheets
+
+          **v2.0.0 fixed a launch-breaking bug** where every game showed a green/black noise
+          pattern instead of a real (if currently blank) frame - a Metal fragment shader was
+          sampling a texture that nothing had ever bound. If you hit the "green screen of
+          death" on an earlier version, this release fixes it.
 
           This is an actively evolving interpreter, not a finished, benchmarked emulator - see
           "Known Limitations" below before expecting real games to run.
