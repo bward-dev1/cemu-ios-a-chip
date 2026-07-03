@@ -112,7 +112,6 @@ struct GameBrowserView: View {
     @Binding var showingFavorites: Bool
     @State private var searchText = ""
     @State private var showingImporter = false
-    @State private var isImporting = false
     @State private var showingSettings = false
     @State private var pendingDelete: GameMetadata?
     @State private var coverPickerTarget: GameMetadata?
@@ -213,7 +212,7 @@ struct GameBrowserView: View {
                             HStack(spacing: 8) {
                                 Button(action: { showingImporter = true }) {
                                     Group {
-                                        if isImporting {
+                                        if gameManager.importProgress != nil {
                                             ProgressView()
                                                 .tint(.white)
                                         } else {
@@ -226,7 +225,7 @@ struct GameBrowserView: View {
                                 .frame(width: 44, height: 44)
                                 .background(Color.white.opacity(0.05))
                                 .cornerRadius(12)
-                                .disabled(isImporting)
+                                .disabled(gameManager.importProgress != nil)
                                 .accessibilityLabel("Upload ROM")
 
                                 Button(action: { showingFavorites.toggle() }) {
@@ -290,6 +289,11 @@ struct GameBrowserView: View {
                         .padding(.horizontal, 16)
                         .padding(.top, 16)
 
+                    if let progress = gameManager.importProgress {
+                        ImportProgressBanner(completed: progress.completed, total: progress.total)
+                            .padding(.horizontal, 16)
+                    }
+
                     if gameManager.isLoading {
                         LoadingView()
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -350,10 +354,8 @@ struct GameBrowserView: View {
         }
         .sheet(isPresented: $showingImporter) {
             ROMDocumentPicker { urls in
-                isImporting = true
                 Task {
                     await gameManager.importROMs(from: urls)
-                    isImporting = false
                 }
             }
             .ignoresSafeArea()
@@ -632,6 +634,35 @@ struct SearchBarPolished: View {
         .frame(height: 44)
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 12)
+        .background(Color.white.opacity(0.05))
+        .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.white.opacity(0.1), lineWidth: 0.5)
+        )
+    }
+}
+
+struct ImportProgressBanner: View {
+    let completed: Int
+    let total: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(completed >= total ? "Finishing up..." : "Importing \(completed + 1) of \(total)...")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.white)
+                Spacer()
+                Text("\(completed)/\(total)")
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .foregroundColor(Color(red: 0.6, green: 0.6, blue: 0.6))
+            }
+
+            ProgressView(value: Double(completed), total: Double(max(total, 1)))
+                .tint(Color(red: 0.4, green: 0.6, blue: 1.0))
+        }
+        .padding(12)
         .background(Color.white.opacity(0.05))
         .cornerRadius(12)
         .overlay(

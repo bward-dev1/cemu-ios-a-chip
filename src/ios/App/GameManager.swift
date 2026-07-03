@@ -33,6 +33,10 @@ class GameManager: ObservableObject {
     @Published var lastImportError: String?
     @Published var lastLaunchError: String?
 
+    /// Set while importROMs() is running: (files completed, total files).
+    /// nil when no import is in progress.
+    @Published var importProgress: (completed: Int, total: Int)?
+
     /// Mirrors `emulationEngine.frameRate`. The engine's own `@Published`
     /// property doesn't propagate to views observing `GameManager` (SwiftUI
     /// only watches `objectWillChange` on the object it's handed, not nested
@@ -145,8 +149,11 @@ class GameManager: ObservableObject {
         try? fileManager.createDirectory(at: romsPath, withIntermediateDirectories: true)
 
         var firstError: String?
+        importProgress = (completed: 0, total: urls.count)
 
-        for url in urls {
+        for (index, url) in urls.enumerated() {
+            defer { importProgress = (completed: index + 1, total: urls.count) }
+
             let ext = url.pathExtension.lowercased()
             guard ["wua", "wud", "iso", "rpx"].contains(ext) else {
                 if firstError == nil {
@@ -169,6 +176,7 @@ class GameManager: ObservableObject {
         }
 
         lastImportError = firstError
+        importProgress = nil
         await loadGames()
     }
 
