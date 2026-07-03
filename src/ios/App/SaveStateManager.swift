@@ -37,6 +37,13 @@ enum SaveStateError: Error {
 final class SaveStateManager {
     static let slotsPerGame = 3
 
+    /// Reserved slot for the automatic "resume where I left off" save,
+    /// separate from the numbered manual slots (1...slotsPerGame). 0 can't
+    /// collide with those, and listSaveStates(for:) only enumerates
+    /// 1...slotsPerGame, so the auto-save naturally stays invisible to the
+    /// manual Save States sheet.
+    static let autoSaveSlot = 0
+
     private let fileManager = FileManager.default
 
     private func gameDirectory(for gameID: String) -> URL? {
@@ -63,6 +70,14 @@ final class SaveStateManager {
             }
             return try? JSONDecoder().decode(SaveStateMetadata.self, from: data)
         }
+    }
+
+    /// Cheap existence check for a specific slot (including the reserved
+    /// auto-save slot, which listSaveStates(for:) deliberately doesn't
+    /// enumerate) - just a file-exists check, no decode.
+    func hasSaveState(gameID: String, slot: Int) -> Bool {
+        guard let url = metadataURL(gameID: gameID, slot: slot) else { return false }
+        return fileManager.fileExists(atPath: url.path)
     }
 
     /// Captures the engine's current state (thread-safe - see

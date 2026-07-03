@@ -759,6 +759,7 @@ struct EmulatorViewOptimized: View {
     @State private var showControls = true
     @State private var showSkinSelector = false
     @State private var showingSaveStates = false
+    @State private var showResumedBanner = false
 
     var body: some View {
         ZStack {
@@ -767,8 +768,10 @@ struct EmulatorViewOptimized: View {
             VStack(spacing: 0) {
                 HStack(alignment: .center, spacing: 12) {
                     Button(action: {
-                        gameManager.stopEmulation()
-                        isRunning = true
+                        Task {
+                            await gameManager.exitToLibrary()
+                            isRunning = true
+                        }
                     }) {
                         HStack(spacing: 6) {
                             Image(systemName: "chevron.left")
@@ -868,10 +871,40 @@ struct EmulatorViewOptimized: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
+
+            if showResumedBanner {
+                VStack {
+                    HStack(spacing: 8) {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("Resumed from Auto-Save")
+                            .font(.system(size: 13, weight: .semibold))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(Color.black.opacity(0.75))
+                    .cornerRadius(20)
+                    .padding(.top, 70)
+
+                    Spacer()
+                }
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .allowsHitTesting(false)
+            }
         }
         .onTapGesture {
             withAnimation(.easeInOut(duration: 0.3)) {
                 showControls.toggle()
+            }
+        }
+        .onChange(of: gameManager.justResumedFromAutoSave) { didResume in
+            guard didResume else { return }
+            withAnimation { showResumedBanner = true }
+            Task {
+                try? await Task.sleep(nanoseconds: 2_500_000_000)
+                withAnimation { showResumedBanner = false }
+                gameManager.justResumedFromAutoSave = false
             }
         }
         .sheet(isPresented: $showingSaveStates) {

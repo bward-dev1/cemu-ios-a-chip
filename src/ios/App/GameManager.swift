@@ -34,6 +34,12 @@ class GameManager: ObservableObject {
     @Published var lastLaunchError: String?
     @Published var saveStateError: String?
 
+    /// Set true right after launchGame() silently applies an auto-save on
+    /// top of a freshly-loaded ROM. Views can observe this to show a brief
+    /// "Resumed" indicator, then reset it back to false once shown - it's
+    /// not meant to persist as durable state, just a one-shot signal.
+    @Published var justResumedFromAutoSave = false
+
     /// Set while importROMs() is running: (files completed, total files).
     /// nil when no import is in progress.
     @Published var importProgress: (completed: Int, total: Int)?
@@ -64,6 +70,15 @@ class GameManager: ObservableObject {
     private var emulationEngine: OptimizedEmulationEngine?
     private var frameRateCancellable: AnyCancellable?
     private let saveStateManager = SaveStateManager()
+
+    /// The in-flight auto-resume kicked off by launchGame(), if any.
+    /// exitToLibrary() awaits this before capturing its own exit-auto-save -
+    /// without it, a near-instant Play-then-Back could have the exit-save's
+    /// capture (which reads whatever state exists *right now*) run before
+    /// the auto-resume's restore has actually applied, overwriting the very
+    /// auto-save slot being restored from with the pre-restore fresh-ROM
+    /// state instead of the progress that was supposed to be preserved.
+    private var pendingAutoResumeTask: Task<Void, Never>?
 
     init() {
         let engine = OptimizedEmulationEngine()
@@ -404,12 +419,56 @@ class GameManager: ObservableObject {
         engine.startEmulation()
         emulationState = .running
         recordLastPlayed(game)
+
+        if saveStateManager.hasSaveState(gameID: game.id, slot: SaveStateManager.autoSaveSlot) {
+            pendingAutoResumeTask = Task {
+                if await silentlyLoadAutoSave(gameID: game.id, engine: engine) {
+                    justResumedFromAutoSave = true
+                }
+            }
+        }
+    }
+
+    /// Restores the auto-save slot without touching saveStateError on
+    /// failure - this runs silently right after launch, before the user has
+    /// interacted with Save States themselves, so a corrupted or
+    /// incompatible auto-save should just be skipped rather than popping an
+    /// alert for something the user never asked to load.
+    private func silentlyLoadAutoSave(gameID: String, engine: OptimizedEmulationEngine) async -> Bool {
+        await withCheckedContinuation { continuation in
+            saveStateManager.load(gameID: gameID, slot: SaveStateManager.autoSaveSlot, engine: engine) { result in
+                switch result {
+                case .success: continuation.resume(returning: true)
+                case .failure: continuation.resume(returning: false)
+                }
+            }
+        }
     }
 
     func stopEmulation() {
         emulationEngine?.stopEmulation()
         emulationState = .idle
         currentGame = nil
+    }
+
+    /// Auto-saves the currently running game into a reserved slot (invisible
+    /// to the manual Save States sheet) before stopping, so the user can
+    /// pick up where they left off without remembering to save manually.
+    /// Only the "Back" button path should call this - deleteROM/reset() call
+    /// stopEmulation() directly, since auto-saving before either would just
+    /// be wasted work (the save would immediately become orphaned/irrelevant).
+    func exitToLibrary() async {
+        await pendingAutoResumeTask?.value
+        pendingAutoResumeTask = nil
+
+        if emulationState == .running, let game = currentGame, let engine = emulationEngine {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                saveStateManager.save(gameID: game.id, slot: SaveStateManager.autoSaveSlot, label: "Auto-Save", engine: engine) { _ in
+                    continuation.resume()
+                }
+            }
+        }
+        stopEmulation()
     }
 
     // MARK: - Save States
