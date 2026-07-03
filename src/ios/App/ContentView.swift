@@ -460,6 +460,10 @@ struct GameCardOptimized: View {
     let onSetCoverTap: () -> Void
     let onRenameTap: () -> Void
 
+    private var isNewAndUnplayed: Bool {
+        game.lastPlayedDate == nil && game.dateAdded.timeIntervalSinceNow > -3 * 24 * 60 * 60
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             ZStack {
@@ -502,6 +506,16 @@ struct GameCardOptimized: View {
                                 .padding(8)
                             Spacer()
                         } else {
+                            if isNewAndUnplayed {
+                                Text("NEW")
+                                    .font(.system(size: 9, weight: .heavy))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 3)
+                                    .background(Color(red: 1.0, green: 0.4, blue: 0.4))
+                                    .cornerRadius(6)
+                                    .padding(8)
+                            }
                             Spacer()
                             Button(action: onFavoriteTap) {
                                 Image(systemName: game.isFavorite ? "heart.fill" : "heart")
@@ -534,6 +548,12 @@ struct GameCardOptimized: View {
                         .font(.system(size: 11, weight: .regular))
                         .foregroundColor(Color(red: 0.6, green: 0.6, blue: 0.6))
                     Spacer()
+                    if let lastPlayed = game.lastPlayedDate {
+                        Text(lastPlayed, format: .relative(presentation: .named))
+                            .font(.system(size: 10, weight: .regular))
+                            .foregroundColor(Color(red: 0.4, green: 0.6, blue: 1.0).opacity(0.8))
+                            .lineLimit(1)
+                    }
                 }
 
                 Button(action: onTap) {
