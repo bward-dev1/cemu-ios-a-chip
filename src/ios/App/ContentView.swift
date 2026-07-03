@@ -77,6 +77,20 @@ struct LaunchErrorView: View {
     }
 }
 
+enum GameSortOption: String, CaseIterable {
+    case name = "Name"
+    case recentlyAdded = "Recently Added"
+    case favoritesFirst = "Favorites First"
+
+    var systemImage: String {
+        switch self {
+        case .name: return "textformat"
+        case .recentlyAdded: return "clock"
+        case .favoritesFirst: return "heart"
+        }
+    }
+}
+
 struct GameBrowserView: View {
     @ObservedObject var gameManager: GameManager
     @Binding var selectedGame: GameMetadata?
@@ -87,12 +101,31 @@ struct GameBrowserView: View {
     @State private var isImporting = false
     @State private var showingSettings = false
     @State private var pendingDelete: GameMetadata?
+    @AppStorage("gameSortOption") private var sortOptionRaw: String = GameSortOption.name.rawValue
+
+    private var sortOption: GameSortOption {
+        GameSortOption(rawValue: sortOptionRaw) ?? .name
+    }
 
     var filteredGames: [GameMetadata] {
         let gamesToShow = showingFavorites ? gameManager.favorites : gameManager.games
-        return searchText.isEmpty
+        let searched = searchText.isEmpty
             ? gamesToShow
             : gamesToShow.filter { $0.title.localizedCaseInsensitiveContains(searchText) }
+
+        switch sortOption {
+        case .name:
+            return searched.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        case .recentlyAdded:
+            return searched.sorted { $0.dateAdded > $1.dateAdded }
+        case .favoritesFirst:
+            return searched.sorted { lhs, rhs in
+                if lhs.isFavorite != rhs.isFavorite {
+                    return lhs.isFavorite && !rhs.isFavorite
+                }
+                return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+            }
+        }
     }
 
     var body: some View {
@@ -149,6 +182,23 @@ struct GameBrowserView: View {
                             .frame(width: 44, height: 44)
                             .background(Color.white.opacity(0.05))
                             .cornerRadius(12)
+
+                            Menu {
+                                Picker("Sort", selection: $sortOptionRaw) {
+                                    ForEach(GameSortOption.allCases, id: \.rawValue) { option in
+                                        Label(option.rawValue, systemImage: option.systemImage)
+                                            .tag(option.rawValue)
+                                    }
+                                }
+                            } label: {
+                                Image(systemName: "arrow.up.arrow.down")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundColor(Color(red: 0.6, green: 0.6, blue: 0.6))
+                            }
+                            .frame(width: 44, height: 44)
+                            .background(Color.white.opacity(0.05))
+                            .cornerRadius(12)
+                            .accessibilityLabel("Sort games")
 
                             Button(action: { showingSettings = true }) {
                                 Image(systemName: "gearshape.fill")

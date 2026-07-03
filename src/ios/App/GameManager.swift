@@ -11,9 +11,10 @@ struct GameMetadata: Codable, Identifiable {
     let releaseDate: String
     let genre: String
     var isFavorite: Bool = false
+    var dateAdded: Date = Date()
 
     enum CodingKeys: String, CodingKey {
-        case id, title, romPath, coverPath, region, releaseDate, genre
+        case id, title, romPath, coverPath, region, releaseDate, genre, dateAdded
     }
 }
 
@@ -101,6 +102,7 @@ class GameManager: ObservableObject {
                 guard ["wua", "wud", "iso", "rpx"].contains(pathExtension) else { continue }
 
                 let gameID = item.deletingPathExtension().lastPathComponent
+                let addedDate = (try? item.resourceValues(forKeys: [.creationDateKey]))?.creationDate ?? Date()
 
                 let gameMetadata = GameMetadata(
                     id: gameID,
@@ -110,7 +112,8 @@ class GameManager: ObservableObject {
                     region: "Unknown",
                     releaseDate: "Unknown",
                     genre: "Game",
-                    isFavorite: favoriteIDs.contains(gameID)
+                    isFavorite: favoriteIDs.contains(gameID),
+                    dateAdded: addedDate
                 )
 
                 discoveredGames.append(gameMetadata)
