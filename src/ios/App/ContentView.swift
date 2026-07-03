@@ -10,6 +10,7 @@ struct ContentView: View {
     @State private var showingGameBrowser = true
     @State private var showingFavorites = false
     @State private var selectedSkin: WiiUControllerSkin
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
         let savedName = UserDefaults.standard.string(forKey: lastControllerSkinDefaultsKey)
@@ -46,6 +47,11 @@ struct ContentView: View {
         .ignoresSafeArea()
         .onChange(of: selectedSkin.name) { newName in
             UserDefaults.standard.set(newName, forKey: lastControllerSkinDefaultsKey)
+        }
+        .onChange(of: scenePhase) { newPhase in
+            if newPhase == .background {
+                gameManager.handleAppBackgrounded()
+            }
         }
     }
 }

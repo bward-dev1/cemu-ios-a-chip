@@ -1,6 +1,7 @@
 import Combine
 import Foundation
 import SwiftUI
+import UIKit
 
 struct GameMetadata: Codable, Identifiable {
     let id: String
@@ -452,23 +453,78 @@ class GameManager: ObservableObject {
     }
 
     /// Auto-saves the currently running game into a reserved slot (invisible
-    /// to the manual Save States sheet) before stopping, so the user can
-    /// pick up where they left off without remembering to save manually.
-    /// Only the "Back" button path should call this - deleteROM/reset() call
-    /// stopEmulation() directly, since auto-saving before either would just
-    /// be wasted work (the save would immediately become orphaned/irrelevant).
-    func exitToLibrary() async {
+    /// to the manual Save States sheet), without stopping emulation or
+    /// touching any UI state. Shared by exitToLibrary() (which stops
+    /// afterward) and app-backgrounding (which doesn't - the game keeps
+    /// running in case the user switches right back).
+    @discardableResult
+    func autoSaveIfRunning() async -> Bool {
         await pendingAutoResumeTask?.value
         pendingAutoResumeTask = nil
 
-        if emulationState == .running, let game = currentGame, let engine = emulationEngine {
-            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                saveStateManager.save(gameID: game.id, slot: SaveStateManager.autoSaveSlot, label: "Auto-Save", engine: engine) { _ in
-                    continuation.resume()
+        guard emulationState == .running, let game = currentGame, let engine = emulationEngine else {
+            return false
+        }
+
+        return await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+            saveStateManager.save(gameID: game.id, slot: SaveStateManager.autoSaveSlot, label: "Auto-Save", engine: engine) { result in
+                switch result {
+                case .success: continuation.resume(returning: true)
+                case .failure: continuation.resume(returning: false)
                 }
             }
         }
+    }
+
+    /// Auto-saves (if a game is running) then stops emulation, so the user
+    /// can pick up where they left off without remembering to save
+    /// manually. Only the "Back" button path should call this -
+    /// deleteROM/reset() call stopEmulation() directly, since auto-saving
+    /// before either would just be wasted work (the save would immediately
+    /// become orphaned/irrelevant).
+    func exitToLibrary() async {
+        await autoSaveIfRunning()
         stopEmulation()
+    }
+
+    /// Called when the app enters the background while a game might be
+    /// running. Requests a short background execution extension from iOS -
+    /// the auto-save capture + lzfse compress + disk write needs to finish
+    /// before the app actually suspends, which can happen within seconds of
+    /// backgrounding - and fires a best-effort auto-save without stopping
+    /// emulation, since the user may just be switching apps briefly and
+    /// coming right back.
+    func handleAppBackgrounded() {
+        guard emulationState == .running else { return }
+
+        // If iOS's background time budget runs out before the auto-save
+        // Task below finishes, the expiration handler fires and ends the
+        // task itself - the Task's own completion would then try to end the
+        // *same* task ID again. UIApplication requires exactly one matched
+        // end call per begin, so without this guard that's a real (if
+        // narrow) double-call, not just a hypothetical one: both paths run
+        // on the main actor (Apple calls the expiration handler synchronously
+        // on the main thread; the Task's post-await continuation also lands
+        // back on the main actor), so it's not a data race, but the
+        // *sequence* - expire first, auto-save completion second - still
+        // fires endBackgroundTask twice for one begin.
+        var taskID: UIBackgroundTaskIdentifier = .invalid
+        var didEndTask = false
+
+        func endTaskOnce() {
+            guard !didEndTask else { return }
+            didEndTask = true
+            UIApplication.shared.endBackgroundTask(taskID)
+        }
+
+        taskID = UIApplication.shared.beginBackgroundTask(withName: "MuffinEmulatorAutoSave") {
+            endTaskOnce()
+        }
+
+        Task {
+            await autoSaveIfRunning()
+            endTaskOnce()
+        }
     }
 
     // MARK: - Save States
