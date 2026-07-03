@@ -172,7 +172,7 @@ struct GameBrowserView: View {
             VStack(spacing: 0) {
                 HStack(alignment: .center, spacing: 16) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Wii U")
+                        Text("Muffin")
                             .font(.system(size: 28, weight: .bold, design: .default))
                             .foregroundColor(.white)
 
@@ -758,6 +758,7 @@ struct EmulatorViewOptimized: View {
     @Binding var controllerSkin: WiiUControllerSkin
     @State private var showControls = true
     @State private var showSkinSelector = false
+    @State private var showingSaveStates = false
 
     var body: some View {
         ZStack {
@@ -795,6 +796,16 @@ struct EmulatorViewOptimized: View {
                     .frame(maxWidth: .infinity)
 
                     HStack(spacing: 8) {
+                        Button(action: { showingSaveStates = true }) {
+                            Image(systemName: "clock.arrow.circlepath")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(Color(red: 0.4, green: 0.6, blue: 1.0))
+                        }
+                        .frame(width: 32, height: 40)
+                        .background(Color.white.opacity(0.1))
+                        .cornerRadius(8)
+                        .accessibilityLabel("Save States")
+
                         Button(action: { showSkinSelector.toggle() }) {
                             Image(systemName: "gamecontroller.fill")
                                 .font(.system(size: 12, weight: .semibold))
@@ -861,6 +872,172 @@ struct EmulatorViewOptimized: View {
         .onTapGesture {
             withAnimation(.easeInOut(duration: 0.3)) {
                 showControls.toggle()
+            }
+        }
+        .sheet(isPresented: $showingSaveStates) {
+            SaveStatesSheet(game: game, gameManager: gameManager)
+        }
+    }
+}
+
+struct SaveStatesSheet: View {
+    let game: GameMetadata
+    @ObservedObject var gameManager: GameManager
+    @Environment(\.dismiss) private var dismiss
+    @State private var busySlot: Int?
+    @State private var pendingOverwriteSlot: Int?
+
+    private var existingStates: [Int: SaveStateMetadata] {
+        Dictionary(uniqueKeysWithValues: gameManager.saveStates(for: game.id).map { ($0.slot, $0) })
+    }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color(red: 0.05, green: 0.08, blue: 0.15).ignoresSafeArea()
+
+                List {
+                    ForEach(1...SaveStateManager.slotsPerGame, id: \.self) { slot in
+                        SaveStateRow(
+                            slot: slot,
+                            metadata: existingStates[slot],
+                            isBusy: busySlot == slot,
+                            onSave: { requestSave(slot: slot) },
+                            onLoad: { load(slot: slot) },
+                            onDelete: { gameManager.deleteSaveState(gameID: game.id, slot: slot) }
+                        )
+                        .listRowBackground(Color.white.opacity(0.05))
+                    }
+                }
+                .scrollContentBackground(.hidden)
+            }
+            .navigationTitle("Save States")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+        .confirmationDialog(
+            "Overwrite Slot \(pendingOverwriteSlot ?? 0)?",
+            isPresented: Binding(
+                get: { pendingOverwriteSlot != nil },
+                set: { if !$0 { pendingOverwriteSlot = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Overwrite", role: .destructive) {
+                if let slot = pendingOverwriteSlot {
+                    save(slot: slot)
+                }
+                pendingOverwriteSlot = nil
+            }
+            Button("Cancel", role: .cancel) {
+                pendingOverwriteSlot = nil
+            }
+        } message: {
+            Text("This replaces the existing save in this slot.")
+        }
+        .alert(
+            "Save State Problem",
+            isPresented: Binding(
+                get: { gameManager.saveStateError != nil },
+                set: { if !$0 { gameManager.saveStateError = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(gameManager.saveStateError ?? "")
+        }
+    }
+
+    private func requestSave(slot: Int) {
+        if existingStates[slot] != nil {
+            pendingOverwriteSlot = slot
+        } else {
+            save(slot: slot)
+        }
+    }
+
+    private func save(slot: Int) {
+        busySlot = slot
+        Task {
+            await gameManager.saveState(gameID: game.id, slot: slot, label: "Slot \(slot)")
+            busySlot = nil
+        }
+    }
+
+    private func load(slot: Int) {
+        busySlot = slot
+        Task {
+            await gameManager.loadState(gameID: game.id, slot: slot)
+            busySlot = nil
+        }
+    }
+}
+
+struct SaveStateRow: View {
+    let slot: Int
+    let metadata: SaveStateMetadata?
+    let isBusy: Bool
+    let onSave: () -> Void
+    let onLoad: () -> Void
+    let onDelete: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Slot \(slot)")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.white)
+
+                if let metadata {
+                    Text(metadata.createdAt, format: .relative(presentation: .named))
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundColor(Color(red: 0.6, green: 0.6, blue: 0.6))
+                } else {
+                    Text("Empty")
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundColor(Color(red: 0.5, green: 0.5, blue: 0.5))
+                }
+            }
+
+            Spacer()
+
+            if isBusy {
+                ProgressView()
+                    .tint(.white)
+            } else {
+                Button(action: onLoad) {
+                    Text("Load")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(metadata == nil ? Color(red: 0.4, green: 0.4, blue: 0.4) : .white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Color.white.opacity(0.1))
+                        .cornerRadius(8)
+                }
+                .disabled(metadata == nil)
+
+                Button(action: onSave) {
+                    Text("Save")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Color(red: 0.3, green: 0.6, blue: 1.0))
+                        .cornerRadius(8)
+                }
+            }
+        }
+        .padding(.vertical, 4)
+        .swipeActions(edge: .trailing) {
+            if metadata != nil {
+                Button(role: .destructive, action: onDelete) {
+                    Label("Delete", systemImage: "trash")
+                }
             }
         }
     }

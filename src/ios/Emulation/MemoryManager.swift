@@ -133,6 +133,27 @@ class MemoryManager {
     func getMemorySize() -> Int {
         return memorySize
     }
+
+    /// Raw snapshot of the entire backing store, for save states. The caller
+    /// is expected to compress this before persisting it - a 256MB raw dump
+    /// per save slot isn't reasonable, and in practice the buffer is mostly
+    /// zeros (only the loaded ROM plus whatever the interpreter has actually
+    /// touched is non-zero), so it compresses extremely well.
+    func snapshotRawBytes() -> Data {
+        Data(memory)
+    }
+
+    /// Restores a snapshot taken via `snapshotRawBytes()`. Returns false
+    /// (and leaves memory untouched) if the byte count doesn't match this
+    /// manager's size - a mismatch means the snapshot came from a
+    /// differently-sized MemoryManager and restoring it would silently
+    /// corrupt or truncate state.
+    @discardableResult
+    func restoreRawBytes(_ data: Data) -> Bool {
+        guard data.count == memorySize else { return false }
+        memory = [UInt8](data)
+        return true
+    }
 }
 
 class MMIOHandler {

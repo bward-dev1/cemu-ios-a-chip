@@ -1,5 +1,8 @@
 # Cemu — iOS Port (Wii U Emulator, A-chip)
 
+On-device, this app is branded **Muffin Emulator** — this README refers to the underlying
+project by its technical lineage (a Cemu fork) since that's what the codebase actually is.
+
 A native SwiftUI iOS port targeting A-series ("A-chip") devices, built on top of the
 [Cemu](https://cemu.info) Wii U emulator project. This repo contains the iOS app shell
 (`src/ios/`) — game library, controller skins, a PowerPC interpreter with an optional

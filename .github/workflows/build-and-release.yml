@@ -80,10 +80,10 @@ jobs:
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
-        name: "Wii U iOS Emulator ${{ steps.release_notes.outputs.version }}"
+        name: "Muffin Emulator ${{ steps.release_notes.outputs.version }}"
         tag_name: ${{ github.ref_name }}
         body: |
-          # Wii U iOS Emulator Release
+          # Muffin Emulator Release
 
           ## Version
           ${{ steps.release_notes.outputs.version }}

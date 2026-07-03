@@ -234,11 +234,34 @@ class WiiUCPU {
     func getState() -> CPUState {
         return CPUState(
             pc: pc,
+            lr: lr,
+            ctr: ctr,
+            cr: cr,
             registers: registers,
             fpRegisters: floatingPointRegisters,
             cycleCount: cycleCount,
             instructionCount: instructionCount
         )
+    }
+
+    /// Restores a previously captured CPUState (save state load). Resets the
+    /// JIT's compiled-loop cache: those loops are keyed by PC and decoded
+    /// against whatever memory bytes were live when compiled, and a restore
+    /// is exactly the kind of "memory contents changed out from under a
+    /// cached address" event the cache has no way to detect on its own.
+    /// Re-warming is cheap; a stale cached loop silently executing the wrong
+    /// decoded instructions is not.
+    func restoreState(_ state: CPUState) {
+        pc = state.pc
+        lr = state.lr
+        ctr = state.ctr
+        cr = state.cr
+        registers = state.registers
+        floatingPointRegisters = state.fpRegisters
+        cycleCount = state.cycleCount
+        instructionCount = state.instructionCount
+        branched = false
+        jit.reset()
     }
 }
 
@@ -257,8 +280,11 @@ struct PPCInstruction {
     var li: UInt32 { opcode & 0x3FFFFF }
 }
 
-struct CPUState {
+struct CPUState: Codable {
     let pc: UInt32
+    let lr: UInt32
+    let ctr: UInt32
+    let cr: UInt32
     let registers: [UInt32]
     let fpRegisters: [Double]
     let cycleCount: UInt64

@@ -23,9 +23,65 @@ final class OptimizedEmulationEngine: NSObject, ObservableObject {
     private var instructionCache: [UInt32: UInt32] = [:]
     private let cacheLock = NSLock()
 
+    private let stateRequestLock = NSLock()
+    private var pendingCaptureCompletion: ((CPUState?, Data?) -> Void)?
+    private var pendingRestore: (cpuState: CPUState, memoryData: Data, completion: (Bool) -> Void)?
+
     override init() {
         self.gpuContext = OptimizedGPUContext()
         super.init()
+    }
+
+    /// Captures a save state (CPU registers + full memory snapshot). Safe to
+    /// call from any thread: the actual read happens on the emulation thread
+    /// itself, serviced at the top of its next loop iteration, so it can
+    /// never race an in-flight instruction's register/memory mutations.
+    /// Fails immediately (nil, nil) if nothing is running.
+    func captureState(completion: @escaping (CPUState?, Data?) -> Void) {
+        guard isRunning else {
+            DispatchQueue.main.async { completion(nil, nil) }
+            return
+        }
+        stateRequestLock.lock()
+        pendingCaptureCompletion = completion
+        stateRequestLock.unlock()
+    }
+
+    /// Restores a previously captured save state. Same thread-safety
+    /// approach as `captureState`. `completion` reports false if `memoryData`
+    /// doesn't match this engine's memory size (e.g. a save state from a
+    /// differently-configured build) or if nothing is running to restore into.
+    func restoreState(cpuState: CPUState, memoryData: Data, completion: @escaping (Bool) -> Void) {
+        guard isRunning else {
+            DispatchQueue.main.async { completion(false) }
+            return
+        }
+        stateRequestLock.lock()
+        pendingRestore = (cpuState, memoryData, completion)
+        stateRequestLock.unlock()
+    }
+
+    private func servicePendingStateRequests() {
+        stateRequestLock.lock()
+        let captureCompletion = pendingCaptureCompletion
+        let restore = pendingRestore
+        pendingCaptureCompletion = nil
+        pendingRestore = nil
+        stateRequestLock.unlock()
+
+        if let captureCompletion {
+            let cpuSnapshot = cpu?.getState()
+            let memorySnapshot = memory?.snapshotRawBytes()
+            DispatchQueue.main.async { captureCompletion(cpuSnapshot, memorySnapshot) }
+        }
+
+        if let restore {
+            let memoryRestored = memory?.restoreRawBytes(restore.memoryData) ?? false
+            if memoryRestored {
+                cpu?.restoreState(restore.cpuState)
+            }
+            DispatchQueue.main.async { restore.completion(memoryRestored) }
+        }
     }
 
     /// Returns false if the ROM file couldn't be read (missing, unreadable,
@@ -95,6 +151,8 @@ final class OptimizedEmulationEngine: NSObject, ObservableObject {
 
         while !shouldStop && isRunning {
             autoreleasepool {
+                servicePendingStateRequests()
+
                 guard let cpu = cpu else { return }
 
                 let frameCycles = cpu.runUntilFrame()
@@ -165,7 +223,6 @@ final class OptimizedEmulationEngine: NSObject, ObservableObject {
 class OptimizedGPUContext {
     private let device: MTLDevice
     private let commandQueue: MTLCommandQueue?
-    private var renderPipelineState: MTLRenderPipelineState?
     private var framePool: [MTLTexture] = []
     private var currentFrameIndex = 0
     private let framePoolSize = 3
@@ -179,7 +236,6 @@ class OptimizedGPUContext {
         self.commandQueue?.label = "CemuEmulatorCommandQueue"
 
         setupFramePool()
-        setupRenderPipeline()
     }
 
     private func setupFramePool() {
@@ -203,21 +259,20 @@ class OptimizedGPUContext {
         }
     }
 
-    private func setupRenderPipeline() {
-        let library = device.makeDefaultLibrary()
-
-        let pipelineDescriptor = MTLRenderPipelineDescriptor()
-        pipelineDescriptor.vertexFunction = library?.makeFunction(name: "screenVertex")
-        pipelineDescriptor.fragmentFunction = library?.makeFunction(name: "screenFragment")
-        pipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
-
-        do {
-            renderPipelineState = try device.makeRenderPipelineState(descriptor: pipelineDescriptor)
-        } catch {
-            print("Error creating render pipeline: \(error)")
-        }
-    }
-
+    /// Produces this frame's texture. There's no real Wii U GPU command
+    /// translation implemented yet - `memory` isn't read here at all - so
+    /// this currently just clears to black and hands the texture back.
+    ///
+    /// This used to *also* issue a full-screen quad draw through
+    /// `screenFragment`, a shader that samples `colorTexture` /
+    /// `textureSampler` - but nothing ever bound a texture or sampler to the
+    /// encoder before that draw call. Sampling an unbound texture argument is
+    /// undefined behavior in Metal; on-device that resolved to a consistent
+    /// green/black noise pattern smeared across the whole frame every time a
+    /// game launched (the "green screen of death"). Since there's no real
+    /// frame content to texture that quad with anyway, the fix is simply not
+    /// issuing the draw - the clear pass alone produces a well-defined black
+    /// frame, which is what this stub is actually capable of rendering today.
     func renderOptimizedFrame(memory: MemoryManager) -> MTLTexture? {
         guard let commandBuffer = commandQueue?.makeCommandBuffer() else { return nil }
 
@@ -234,29 +289,7 @@ class OptimizedGPUContext {
             return nil
         }
 
-        if let pipelineState = renderPipelineState {
-            renderEncoder.setRenderPipelineState(pipelineState)
-        }
-        renderEncoder.setFrontFacing(.counterClockwise)
-        renderEncoder.setCullMode(.back)
-
-        let quad: [Float] = [
-            -1.0, 1.0, 0, 1,
-            -1.0, -1.0, 0, 0,
-            1.0, -1.0, 1, 0,
-            -1.0, 1.0, 0, 1,
-            1.0, -1.0, 1, 0,
-            1.0, 1.0, 1, 1
-        ]
-
-        guard let vertexBuffer = device.makeBuffer(bytes: quad, length: MemoryLayout<Float>.size * quad.count, options: .storageModeShared) else {
-            return nil
-        }
-
-        renderEncoder.setVertexBuffer(vertexBuffer, offset: 0, index: 0)
-        renderEncoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
         renderEncoder.endEncoding()
-
         commandBuffer.commit()
 
         return texture

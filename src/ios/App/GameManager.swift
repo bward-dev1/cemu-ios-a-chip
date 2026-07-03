@@ -32,6 +32,7 @@ class GameManager: ObservableObject {
     @Published var emulationState: EmulationState = .idle
     @Published var lastImportError: String?
     @Published var lastLaunchError: String?
+    @Published var saveStateError: String?
 
     /// Set while importROMs() is running: (files completed, total files).
     /// nil when no import is in progress.
@@ -62,6 +63,7 @@ class GameManager: ObservableObject {
     private let customTitlesFile = "customTitles.json"
     private var emulationEngine: OptimizedEmulationEngine?
     private var frameRateCancellable: AnyCancellable?
+    private let saveStateManager = SaveStateManager()
 
     init() {
         let engine = OptimizedEmulationEngine()
@@ -278,6 +280,7 @@ class GameManager: ObservableObject {
         saveFavoriteIDs()
         removeLastPlayed(game.id)
         removeCustomTitle(game.id)
+        saveStateManager.deleteAllSaveStates(for: game.id)
     }
 
     /// Deletes several ROMs at once (batch selection UI). Reuses deleteROM()
@@ -407,6 +410,66 @@ class GameManager: ObservableObject {
         emulationEngine?.stopEmulation()
         emulationState = .idle
         currentGame = nil
+    }
+
+    // MARK: - Save States
+
+    func saveStates(for gameID: String) -> [SaveStateMetadata] {
+        saveStateManager.listSaveStates(for: gameID)
+    }
+
+    @discardableResult
+    func saveState(gameID: String, slot: Int, label: String) async -> Bool {
+        guard let engine = emulationEngine else {
+            saveStateError = "No game is currently running."
+            return false
+        }
+
+        return await withCheckedContinuation { continuation in
+            saveStateManager.save(gameID: gameID, slot: slot, label: label, engine: engine) { [weak self] result in
+                switch result {
+                case .success:
+                    continuation.resume(returning: true)
+                case .failure(let error):
+                    self?.saveStateError = Self.message(for: error)
+                    continuation.resume(returning: false)
+                }
+            }
+        }
+    }
+
+    @discardableResult
+    func loadState(gameID: String, slot: Int) async -> Bool {
+        guard let engine = emulationEngine else {
+            saveStateError = "No game is currently running."
+            return false
+        }
+
+        return await withCheckedContinuation { continuation in
+            saveStateManager.load(gameID: gameID, slot: slot, engine: engine) { [weak self] result in
+                switch result {
+                case .success:
+                    continuation.resume(returning: true)
+                case .failure(let error):
+                    self?.saveStateError = Self.message(for: error)
+                    continuation.resume(returning: false)
+                }
+            }
+        }
+    }
+
+    func deleteSaveState(gameID: String, slot: Int) {
+        saveStateManager.deleteSaveState(gameID: gameID, slot: slot)
+    }
+
+    private static func message(for error: SaveStateError) -> String {
+        switch error {
+        case .notRunning: return "No game is currently running."
+        case .captureFailed: return "Couldn't capture the current state."
+        case .sizeMismatch: return "This save state doesn't match the running game - it may be corrupted or from an incompatible version."
+        case .compressionFailed: return "Couldn't compress the save state."
+        case .io(let err): return "Save state error: \(err.localizedDescription)"
+        }
     }
 
     func getEmulationEngine() -> OptimizedEmulationEngine? {
