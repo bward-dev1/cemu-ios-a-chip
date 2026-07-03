@@ -540,6 +540,25 @@ class GameManager: ObservableObject {
         saveStateManager.hasSaveState(gameID: gameID, slot: SaveStateManager.autoSaveSlot)
     }
 
+    /// Discards the auto-save for `gameID` without touching the 3 manual
+    /// slots. The auto-save slot is deliberately invisible from the manual
+    /// Save States sheet (it's not one of the numbered 1...slotsPerGame
+    /// slots listSaveStates(for:) enumerates), which otherwise leaves a
+    /// player with no way to abandon resumed progress and start clean -
+    /// this is that escape hatch, exposed as "Start Fresh" on the game card.
+    ///
+    /// hasAutoSave(for:) is a synchronous file-existence check re-evaluated
+    /// fresh on every render, not tracked by any @Published property - so
+    /// without manually signaling objectWillChange here, the RESUME badge in
+    /// the browser grid wouldn't disappear until some *unrelated* state
+    /// change happened to trigger a re-render (the underlying file is
+    /// correctly gone either way; this is purely about the badge not
+    /// visibly going stale).
+    func discardAutoSave(for gameID: String) {
+        saveStateManager.deleteSaveState(gameID: gameID, slot: SaveStateManager.autoSaveSlot)
+        objectWillChange.send()
+    }
+
     @discardableResult
     func saveState(gameID: String, slot: Int, label: String) async -> Bool {
         guard let engine = emulationEngine else {

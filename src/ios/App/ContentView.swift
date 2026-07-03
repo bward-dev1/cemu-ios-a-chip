@@ -120,6 +120,7 @@ struct GameBrowserView: View {
     @State private var showingImporter = false
     @State private var showingSettings = false
     @State private var pendingDelete: GameMetadata?
+    @State private var pendingStartFresh: GameMetadata?
     @State private var coverPickerTarget: GameMetadata?
     @State private var coverPickerItem: PhotosPickerItem?
     @State private var renameTarget: GameMetadata?
@@ -345,6 +346,9 @@ struct GameBrowserView: View {
                                         onRenameTap: {
                                             renameText = game.title
                                             renameTarget = game
+                                        },
+                                        onStartFreshTap: {
+                                            pendingStartFresh = game
                                         }
                                     )
                                 }
@@ -400,6 +404,26 @@ struct GameBrowserView: View {
             }
         } message: {
             Text("This removes the ROM file from your device. This can't be undone.")
+        }
+        .confirmationDialog(
+            "Start \"\(pendingStartFresh?.title ?? "")\" Over?",
+            isPresented: Binding(
+                get: { pendingStartFresh != nil },
+                set: { if !$0 { pendingStartFresh = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Start Fresh", role: .destructive) {
+                if let game = pendingStartFresh {
+                    gameManager.discardAutoSave(for: game.id)
+                }
+                pendingStartFresh = nil
+            }
+            Button("Cancel", role: .cancel) {
+                pendingStartFresh = nil
+            }
+        } message: {
+            Text("This discards your saved progress for this game. Your 3 manual save slots aren't affected.")
         }
         .photosPicker(
             isPresented: Binding(
@@ -469,6 +493,7 @@ struct GameCardOptimized: View {
     let onDeleteTap: () -> Void
     let onSetCoverTap: () -> Void
     let onRenameTap: () -> Void
+    var onStartFreshTap: () -> Void = {}
 
     private var isNewAndUnplayed: Bool {
         game.lastPlayedDate == nil && game.dateAdded.timeIntervalSinceNow > -3 * 24 * 60 * 60
@@ -628,6 +653,11 @@ struct GameCardOptimized: View {
             }
             Button(action: onSetCoverTap) {
                 Label("Set Cover Image", systemImage: "photo")
+            }
+            if hasResumeAvailable {
+                Button(role: .destructive, action: onStartFreshTap) {
+                    Label("Start Fresh", systemImage: "arrow.counterclockwise")
+                }
             }
             Button(role: .destructive, action: onDeleteTap) {
                 Label("Delete ROM", systemImage: "trash")
